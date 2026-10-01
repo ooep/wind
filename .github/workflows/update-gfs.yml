@@ -48,17 +48,19 @@ jobs:
         run: |
           git config user.name  "fy-data-bot"
           git config user.email "fy-data-bot@users.noreply.github.com"
-          git fetch origin data-dist && git checkout data-dist || { git checkout --orphan data-dist; git rm -rf . -q 2>/dev/null || true; }
-          mkdir -p dist/data/gfs_raw
-          cp -r out/gfs_raw/* dist/data/gfs_raw/
+          if git fetch origin data-dist 2>/dev/null; then
+            git checkout -B data-dist origin/data-dist
+          else
+            git checkout --orphan data-dist
+            git rm -rf --cached . -q 2>/dev/null || true
+          fi
+          mkdir -p dist/data
+          cp -r out/data/. dist/data/
           node tools/build-static.js --out dist/data --index-only
-          git add dist/data
-          git commit -m "data update gfs_raw $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
+          git add -f dist/data
+          git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
           for i in 1 2 3 4 5; do
             git push origin data-dist && break
             git fetch origin data-dist
-            git rebase origin/data-dist || true
+            git rebase origin/data-dist 2>/dev/null || true
           done
-
-# 可选:Pages 托管 data-dist 分支后,前端 FY_CONFIG.staticData 填
-#   https://<owner>.github.io/<repo>/dist/data
