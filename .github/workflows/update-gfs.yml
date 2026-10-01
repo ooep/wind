@@ -1,0 +1,64 @@
+name: data · GFS 0.5°
+
+# 独立数据源管道:定时抓取原始 GRIB2 → 自解码 → 生成静态数据包 → 发布到 data-dist 分支。
+# 与其他数据源的 Action 相互独立,互不阻塞。
+on:
+  schedule:
+    - cron: '30 4,10,16,22 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-gfs_raw
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 跨轮恢复摄取进度:限流期的抓取逐轮累积
+      - name: 恢复摄取缓存
+        uses: actions/cache@v4
+        with:
+          path: .cache/gfsraw
+          key: ingest-gfs_raw-latest
+          restore-keys: ingest-gfs_raw-
+
+      - name: 生成静态数据包
+        run: |
+          node tools/build-static.js --out out/data --models gfs_raw
+
+      - name: 保存摄取缓存
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache/gfsraw
+          key: ingest-gfs_raw-latest-${{ github.run_id }}
+
+      - name: 发布到 data-dist
+        run: |
+          git config user.name  "fy-data-bot"
+          git config user.email "fy-data-bot@users.noreply.github.com"
+          git fetch origin data-dist && git checkout data-dist || { git checkout --orphan data-dist; git rm -rf . -q 2>/dev/null || true; }
+          mkdir -p dist/data/gfs_raw
+          cp -r out/gfs_raw/* dist/data/gfs_raw/
+          node tools/build-static.js --out dist/data --index-only
+          git add dist/data
+          git commit -m "data update gfs_raw $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
+          for i in 1 2 3 4 5; do
+            git push origin data-dist && break
+            git fetch origin data-dist
+            git rebase origin/data-dist || true
+          done
+
+# 可选:Pages 托管 data-dist 分支后,前端 FY_CONFIG.staticData 填
+#   https://<owner>.github.io/<repo>/dist/data

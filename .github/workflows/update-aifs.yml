@@ -1,0 +1,64 @@
+name: data · ECMWF AIFS 0.25°
+
+# 独立数据源管道:定时抓取原始 GRIB2 → 自解码 → 生成静态数据包 → 发布到 data-dist 分支。
+# 与其他数据源的 Action 相互独立,互不阻塞。
+on:
+  schedule:
+    - cron: '45 8,14,20,2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-aifs_raw
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 跨轮恢复摄取进度:限流期的抓取逐轮累积
+      - name: 恢复摄取缓存
+        uses: actions/cache@v4
+        with:
+          path: .cache/nwp-aifs_raw
+          key: ingest-aifs_raw-latest
+          restore-keys: ingest-aifs_raw-
+
+      - name: 生成静态数据包
+        run: |
+          node tools/build-static.js --out out/data --models aifs_raw
+
+      - name: 保存摄取缓存
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache/nwp-aifs_raw
+          key: ingest-aifs_raw-latest-${{ github.run_id }}
+
+      - name: 发布到 data-dist
+        run: |
+          git config user.name  "fy-data-bot"
+          git config user.email "fy-data-bot@users.noreply.github.com"
+          git fetch origin data-dist && git checkout data-dist || { git checkout --orphan data-dist; git rm -rf . -q 2>/dev/null || true; }
+          mkdir -p dist/data/aifs_raw
+          cp -r out/aifs_raw/* dist/data/aifs_raw/
+          node tools/build-static.js --out dist/data --index-only
+          git add dist/data
+          git commit -m "data update aifs_raw $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
+          for i in 1 2 3 4 5; do
+            git push origin data-dist && break
+            git fetch origin data-dist
+            git rebase origin/data-dist || true
+          done
+
+# 可选:Pages 托管 data-dist 分支后,前端 FY_CONFIG.staticData 填
+#   https://<owner>.github.io/<repo>/dist/data
