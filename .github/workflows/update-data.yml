@@ -1,0 +1,48 @@
+name: update-weather-data
+
+# 定时抓取 NOAA/ECMWF 原始 GRIB2 → 解码 → 生成静态数据包 → 推送到数据分支
+# 数据分支(本仓库的 data-dist 分支)可通过 GitHub Pages 托管,前端纯静态直连。
+on:
+  schedule:
+    # NOAA/ECMWF 00/06/12/18Z 时次发布后约 +3.5~7h 完成上传,加缓冲
+    - cron: '30 4,10,16,22 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-weather-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 生成静态数据包
+        run: |
+          node tools/build-static.js \
+            --out dist/data \
+            --models gfs_raw,gefs_raw,ecmwf_raw,aifs_raw \
+            --tiles --tile-deg 20
+
+      - name: 发布到 data-dist 分支(force,浅历史)
+        run: |
+          git config user.name  "fy-data-bot"
+          git config user.email "fy-data-bot@users.noreply.github.com"
+          git checkout --orphan data-dist
+          git reset --hard
+          git add dist/data
+          git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')"
+          git push -f origin data-dist
+
+      # 可选:若用 GitHub Pages 托管数据仓库,开启 Pages(fromBranch → data-dist)后,
+      # 前端 FY_CONFIG.staticData 填:
+      #   https://<owner>.github.io/<data-repo>/dist/data

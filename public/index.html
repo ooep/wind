@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>风云地球 FengyunEarth · 实时全球气象可视化</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%230b1420'/><path d='M18 42c14-6 26 6 40 0s18-10 24-4M18 58c14-6 26 6 40 0s18-10 24-4' stroke='%2345c4ff' stroke-width='7' fill='none' stroke-linecap='round'/></svg>">
+</head>
+<body>
+<div id="map"></div>
+<div id="overlay-root"></div>
+
+<!-- 顶栏:品牌 + 搜索 -->
+<header id="topbar">
+  <div id="brand">
+    <svg viewBox="0 0 100 100" width="26" height="26" aria-hidden="true">
+      <circle cx="50" cy="50" r="44" fill="rgba(69,196,255,.12)"/>
+      <path d="M18 42c14-6 26 6 40 0s18-10 24-4M18 58c14-6 26 6 40 0s18-10 24-4" stroke="#45c4ff" stroke-width="8" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div><b>风云地球</b><span>FENGYUN EARTH</span></div>
+  </div>
+  <div id="searchbox">
+    <svg viewBox="0 0 24 24" width="15" height="15"><path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15zm10 18-4.8-4.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <input id="search-input" type="text" placeholder="搜索城市 / 地点…" autocomplete="off" spellcheck="false">
+    <div id="search-results" hidden></div>
+  </div>
+  <button id="loc-btn" title="我的位置">
+    <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 2.5a1.4 1.4 0 0 1 1.4 1.4v1.2a7 7 0 0 1 5.5 5.5h1.2a1.4 1.4 0 1 1 0 2.8h-1.2a7 7 0 0 1-5.5 5.5v1.2a1.4 1.4 0 1 1-2.8 0v-1.2a7 7 0 0 1-5.5-5.5H4.1a1.4 1.4 0 1 1 0-2.8h1.2a7 7 0 0 1 5.5-5.5V3.9A1.4 1.4 0 0 1 12 2.5z" fill="currentColor"/><circle cx="12" cy="12" r="3.2" fill="#0b1420"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+  </button>
+</header>
+
+<!-- 左侧图层栏 -->
+<nav id="layerbar">
+  <button id="toggle-particles" class="particle-toggle active" title="切换风场粒子动画">
+    <svg viewBox="0 0 24 24" width="17" height="17"><path d="M3 8c4-2.5 7 2.5 11 0M3 13c4-2.5 7 2.5 11 0M7 18c3-2 5 2 9 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>风场粒子</span><i class="dot"></i>
+  </button>
+  <div class="sep"></div>
+  <div id="layer-buttons"></div>
+  <div class="sep"></div>
+  <div id="levelbar" hidden></div>
+</nav>
+
+<!-- 右上:设置 -->
+<div id="settings">
+  <label class="ctl" title="数值预报模式(前三项为自建原始数据管道,无 key 无配额)">
+    <span>模型</span>
+    <select id="model-select">
+      <optgroup label="自建管道">
+        <option value="gfs_raw">NOAA GFS</option>
+        <option value="gefs_raw">NOAA GEFS</option>
+        <option value="ecmwf_raw">ECMWF IFS</option>
+        <option value="aifs_raw">ECMWF AIFS(AI)</option>
+      </optgroup>
+      <optgroup label="Open-Meteo 备用">
+        <option value="best_match">最佳匹配</option>
+        <option value="gfs_seamless">GFS</option>
+        <option value="icon_seamless">ICON</option>
+        <option value="ecmwf_ifs025">ECMWF</option>
+      </optgroup>
+    </select>
+  </label>
+  <label class="ctl" title="底图:矢量线划不会被气象图层遮挡;卫星为影像+线划混合">
+    <span>底图</span>
+    <select id="basemap-select">
+      <option value="vector">矢量线划</option>
+      <option value="satellite">卫星 + 线划</option>
+    </select>
+  </label>
+  <label class="ctl" title="温度单位"><span>单位</span>
+    <select id="unit-select"><option value="c">°C</option><option value="f">°F</option></select>
+  </label>
+  <button id="share-btn" title="复制分享链接">⧉</button>
+  <button id="about-btn" title="数据来源与说明">ⓘ</button>
+</div>
+<button id="settings-toggle" title="设置">⚙</button>
+
+<!-- 底部时间轴 -->
+<div id="timelinebar">
+  <button id="play-btn" title="播放 / 暂停(空格)">
+    <svg id="icon-play" viewBox="0 0 24 24" width="16" height="16"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg>
+    <svg id="icon-pause" viewBox="0 0 24 24" width="16" height="16" style="display:none"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor"/></svg>
+  </button>
+  <div id="time-display"><b id="time-main">--</b><span id="time-sub"></span></div>
+  <div id="timeline">
+    <div id="tl-track">
+      <div id="tl-ticks"></div>
+      <div id="tl-now"></div>
+      <div id="tl-thumb"></div>
+    </div>
+  </div>
+  <div id="tl-step">
+    <button id="step-back" title="后退1小时">‹</button>
+    <button id="step-fwd" title="前进1小时">›</button>
+    <button id="step-now" title="回到当前">现在</button>
+  </div>
+</div>
+
+<!-- 图例 -->
+<div id="legend" hidden>
+  <div id="legend-title"></div>
+  <div id="legend-bar"></div>
+  <div id="legend-labels"></div>
+</div>
+
+<!-- 点位预报面板 -->
+<aside id="panel" hidden>
+  <div id="panel-head">
+    <div id="panel-loc"><b id="panel-title">位置</b><span id="panel-coords"></span></div>
+    <div style="display:flex;gap:2px;align-items:center">
+      <button id="panel-fav" title="收藏此地点" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text-dim);padding:4px 6px;border-radius:7px">☆</button>
+      <button id="panel-close" title="关闭">✕</button>
+    </div>
+  </div>
+  <div id="panel-body">
+    <div id="panel-loading" class="spinner"></div>
+    <div id="panel-content" hidden></div>
+  </div>
+</aside>
+
+<!-- 数据说明弹窗 -->
+<dialog id="about">
+  <div class="dlg-head"><b>数据来源与说明</b><button id="about-close">✕</button></div>
+  <div class="dlg-body">
+    <table>
+      <tr><th>气象模式数据</th><td><b>自建管道(默认),三套模式可切换:</b><br>
+        ① <b>NOAA GFS</b> 0.5°(主引擎)② <b>NOAA GEFS</b> 控制成员 0.5°(集合预报)③ <b>ECMWF IFS</b> 0.25°(欧洲中期天气预报中心,全球参考模式)。<br>
+        全部直接获取官方原始 GRIB2(GFS/GEFS 来自 <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">AWS 开放数据</a>,ECMWF 来自 <a href="https://confluence.ecmwf.int/display/DAC/ECMWF+open+data" target="_blank" rel="noopener">ECMWF Open Data</a>,均无 key 无配额),自研解码器解析、单位换算、格点采样与点预报在本服务内完成。GFS/GEFS 时间窗为过去 24h ~ 未来 7 天;ECMWF 因发布延迟约 6~8 小时。预报存在模式误差,请以官方气象部门发布为准。</td></tr>
+      <tr><th>降水雷达</th><td><a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> — 汇聚各国气象局雷达站观测,约 10 分钟更新;含未来 30 分钟外推。</td></tr>
+      <tr><th>卫星影像</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — NASA 官方 VIIRS/MODIS 真彩影像,每日更新。</td></tr>
+      <tr><th>地名检索</th><td>Open-Meteo Geocoding(GeoNames 数据)。</td></tr>
+      <tr><th>底图</th><td><a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> 矢量线划(海岸线/国界/湖泊/城市标注,已本地化,公有领域);「卫星 + 线划」模式的影像来自 NASA GIBS。矢量底图渲染在气象图层之上,不会被填色遮挡。</td></tr>
+    </table>
+    <p>开放数据许可:NOAA GFS 为美国官方产出(public domain);Open-Meteo 数据 CC BY 4.0(非商业免费,商业使用需授权)。本站为技术演示,不构成任何气象决策依据。</p>
+  </div>
+</dialog>
+
+<div id="toast" hidden></div>
+<div id="grid-loading" hidden><div class="spinner"></div><span>正在加载气象场数据…</span></div>
+
+<footer id="attrib">
+  数据 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>(GFS/ICON/ECMWF) ·
+  <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> ·
+  <a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS</a>
+  | 底图 <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>(矢量线划)
+</footer>
+
+<script>
+  /* 部署配置:纯静态模式下,把 staticData 指向静态数据仓库(如 GitHub Pages)地址。
+     本地 Node 模式保持为空字符串即可。也可用 URL 参数 ?data=<数据地址> 临时指定。 */
+  window.FY_CONFIG = window.FY_CONFIG || { staticData: '' };
+</script>
+<script>
+  window.__capt = [];
+  const __ce = console.error;
+  const __cl = console.log;
+  console.error = function(...a) { window.__capt.push('E: ' + a.map(x => (x && x.message) || String(x)).join(' ')); __ce(...a); };
+  console.log = function(...a) { window.__capt.push('L: ' + a.map(x => (x && x.message) || String(x)).join(' ')); __cl(...a); };
+  window.addEventListener('error', (e) => window.__capt.push('ERR ' + e.message + ':' + e.lineno));
+</script>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/main.js?v=3"></script>
+</body>
+</html>
