@@ -1,7 +1,7 @@
 name: update-weather-data
 
 # 定时抓取 NOAA/ECMWF 原始 GRIB2 → 解码 → 生成静态数据包 → 推送到数据分支
-# 数据分支(本仓库的 data-dist 分支)可通过 GitHub Pages 托管,前端纯静态直连。
+# 四个模型并行摄取(矩阵),互不拖累;Actions 缓存让 ECMWF 限流期的抓取进度跨轮累积。
 on:
   schedule:
     # NOAA/ECMWF 00/06/12/18Z 时次发布后约 +3.5~7h 完成上传,加缓冲
@@ -16,9 +16,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  ingest:
+    name: 摄取 ${{ matrix.model }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 100
+    strategy:
+      matrix:
+        model: [gfs_raw, gefs_raw, ecmwf_raw, aifs_raw]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
 
@@ -26,12 +31,58 @@ jobs:
         with:
           node-version: '20'
 
+      # 跨轮恢复摄取进度(.done/.bin):ECMWF 限流期的抓取逐轮累积
+      - name: 恢复摄取缓存
+        uses: actions/cache@v4
+        with:
+          path: .cache/${{ matrix.model == 'gfs_raw' && 'gfsraw' || format('nwp-{0}', matrix.model) }}
+          key: ingest-${{ matrix.model }}-${{ github.run_id }}
+          restore-keys: ingest-${{ matrix.model }}-
+
       - name: 生成静态数据包
         run: |
           node tools/build-static.js \
-            --out dist/data \
-            --models gfs_raw,gefs_raw,ecmwf_raw,aifs_raw \
-            --tiles --tile-deg 20
+            --out "out/${{ matrix.model }}" \
+            --models "${{ matrix.model }}"
+
+      - name: 保存摄取缓存
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache/${{ matrix.model == 'gfs_raw' && 'gfsraw' || format('nwp-{0}', matrix.model) }}
+          key: ingest-${{ matrix.model }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: data-${{ matrix.model }}
+          path: out/${{ matrix.model }}
+          retention-days: 3
+
+  publish:
+    name: 汇总发布
+    needs: ingest
+    if: always() && !cancelled() && needs.ingest.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 下载各模式数据包
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 合并并重建索引
+        run: |
+          mkdir -p dist/data
+          for d in artifacts/data-*/; do
+            [ -d "$d" ] || continue
+            cp -r "$d"/* dist/data/ 2>/dev/null || true
+          done
+          node tools/build-static.js --out dist/data --index-only
 
       - name: 发布到 data-dist 分支(force,浅历史)
         run: |
@@ -42,7 +93,3 @@ jobs:
           git add dist/data
           git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')"
           git push -f origin data-dist
-
-      # 可选:若用 GitHub Pages 托管数据仓库,开启 Pages(fromBranch → data-dist)后,
-      # 前端 FY_CONFIG.staticData 填:
-      #   https://<owner>.github.io/<data-repo>/dist/data

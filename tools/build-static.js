@@ -35,6 +35,23 @@ const WANT_TILES = flag('tiles');
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
 async function main() {
+  /* --index-only:扫描输出目录,重建 index.json(publish 阶段使用) */
+  if (flag('index-only')) {
+    const models = {};
+    try {
+      for (const d of fs.readdirSync(OUT)) {
+        const metaPath = path.join(OUT, d, 'meta.json');
+        const globalFile = path.join(OUT, d, `global-${COARSE_DEG}.json`);
+        if (!fs.existsSync(metaPath) || !fs.existsSync(globalFile)) continue;
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+        models[d] = { runKey: meta.runKey, meta: 'meta.json', global: `global-${COARSE_DEG}.json` };
+      }
+    } catch { /* 目录不存在 */ }
+    fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ generated: Math.floor(Date.now() / 1000), models }, null, 2));
+    console.log('index.json 重建完成:', Object.keys(models).join(', '));
+    process.exit(0);
+  }
+
   const index = {};
   const SCALES = {
     gfs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100, vis: 10, snowd: 100, cape: 1, pwat: 10, cwat: 100 },
