@@ -61,7 +61,7 @@ async function main() {
     fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta));
 
     // 全球粗网格(2.5°):Int16 + 每变量 scale(体积较 Float32 减半,浏览器解码快)
-    const coarse = await engine.gridCore(-180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
+    const coarse = await rawGridOf(-180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
     const varsOut = {};
     for (const [vk, b64] of Object.entries(coarse.vars)) {
       const f32 = Buffer.from(b64, 'base64');
