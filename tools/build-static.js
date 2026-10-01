@@ -36,11 +36,19 @@ const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_D
 
 async function main() {
   const index = {};
+  const SCALES = {
+    gfs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100, vis: 10, snowd: 100, cape: 1, pwat: 10, cwat: 100 },
+    gefs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100 },
+    ecmwf_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100 },
+    aifs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100 },
+  };
   for (const model of MODELS) {
     let engine;
     if (model === 'gfs_raw') engine = require('../server/gfs').surfaceEngine;
     else engine = require('../server/nwp').ENGINES[model];
     if (!engine) { console.error(`未知模型 ${model}`); process.exit(1); }
+    const rawGridOf = (w, s, e, n, step) =>
+      model === 'gfs_raw' ? require('../server/gfs').rawGrid(w, s, e, n, step, 0) : engine.rawGrid(w, s, e, n, step);
 
     const run = await engine.ensureLoaded();
     const runKey = run.key.replace('/', '-');
@@ -58,7 +66,7 @@ async function main() {
     for (const [vk, b64] of Object.entries(coarse.vars)) {
       const f32 = Buffer.from(b64, 'base64');
       const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
-      const scale = engine.varCfg ? engine.varCfg[vk].scale : 1;
+      const scale = SCALES[model][vk] || 1;
       const q = new Int16Array(vals.length);
       for (let i = 0; i < vals.length; i++) {
         const v = vals[i];
@@ -84,7 +92,7 @@ async function main() {
         for (let r = 0; r < nRow; r++) {
           const w = -180 + c * TILE_DEG, e = w + TILE_DEG;
           const n = 90 - r * TILE_DEG, s = n - TILE_DEG;
-          const tile = await engine.gridCore(w, s, e, n, 0.5);
+          const tile = await rawGridOf(w, s, e, n, 0.5);
           const tileJson = {
             grid: { ni: tile.lons.length, nj: tile.lats.length, lon0: tile.lons[0], dlon: 0.5, lat0: tile.lats[0], dlat: 0.5 },
             times: tile.times,
