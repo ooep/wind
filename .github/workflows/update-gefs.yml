@@ -48,6 +48,7 @@ jobs:
         run: |
           git config user.name  "fy-data-bot"
           git config user.email "fy-data-bot@users.noreply.github.com"
+          cp tools/build-static.js /tmp/build-static.js
           if git fetch origin data-dist 2>/dev/null; then
             git checkout -B data-dist origin/data-dist
           else
@@ -56,7 +57,7 @@ jobs:
           fi
           mkdir -p dist/data
           cp -r out/data/. dist/data/
-          node tools/build-static.js --out dist/data --index-only
+          node /tmp/build-static.js --out dist/data --index-only
           git add -f dist/data
           git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
           for i in 1 2 3 4 5; do
