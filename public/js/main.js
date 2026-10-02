@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, gphCmap } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, SOLAR, COCM, ICING, CATC, FFMC, EXTPROB, gphCmap } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel, staticAvailReady, isStatic } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -99,12 +99,23 @@ ICONS.aerosol = ICONS.dust;
 ICONS.seaice = ICONS.snow;
 ICONS.vapor = ICONS.humidity;
 ICONS.fires = ICONS.fire;
+ICONS.gustmax = ICONS.gust;
+ICONS.sw2h = ICONS.swvh; ICONS.sw2p = ICONS.swvp;
+ICONS.sw3h = ICONS.swvh; ICONS.sw3p = ICONS.swvp;
+ICONS.cloudbase = ICONS.frzlvl; ICONS.cloudtop = ICONS.frzlvl; ICONS.thermals = ICONS.frzlvl;
+ICONS.solar = '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.1 2.1M16.9 16.9 19 19M19 5l-2.1 2.1M7.1 16.9 5 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+ICONS.icing = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 13.5 10 11l6.5-6.5c.9-.9 2.4-.9 3.2 0 .8.8.8 2.2 0 3.1L13 14l-2.5 7-2.4-4.4L3.8 14z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" transform="rotate(8 12 12)"/><path d="M14.5 4.5l1.2 1.2M12.8 6.6l1.2 1.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/></svg>';
+ICONS.cat = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 16c4-2.5 7 2.5 11 0M4 11.5c4-2.5 7 2.5 11 0M6.5 20c3-1.8 5 1.6 8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M15.5 4.5l4 4M19.5 4.5l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+ICONS.ffmc = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.5s4.5 5 4.5 8.2a4.5 4.5 0 0 1-9 0c0-3.2 4.5-8.2 4.5-8.2z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 8.5v6M9.8 11h4.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.8"/></svg>';
+ICONS.extprob = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.5 21 19H3z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.4" r="1.1" fill="currentColor"/></svg>';
+ICONS.cof = '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="9" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16.5" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.75"/><path d="M13.2 12h1" stroke="currentColor" stroke-width="1.4" opacity="0.75"/></svg>';
 ICONS.ndvi = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M18.5 4.5C11 5 5.5 9.5 5.5 16c0 1.2.3 2.3.8 3.2C7.5 13 12 8.5 17.5 6.5c-4.5 3-8 7.5-9.3 13 .9.4 1.9.6 3 .6 6 0 9.3-5.5 7.3-15.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 ICONS.chl = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 15c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="6.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="10.5" r="0.9" fill="currentColor"/><circle cx="18.5" cy="9.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
 
 const LAYERS = [
   { id: 'wind', label: '风场', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'wind', fmt: (v) => String(Math.round(convV('wind', v))) },
   { id: 'gust', label: '阵风', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'gust', fmt: (v) => String(Math.round(convV('wind', v))), models: ['gfs_raw'] },
+  { id: 'gustmax', label: '最大阵风·过程', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'gustmax', fmt: (v) => String(Math.round(convV('wind', v))), models: ['gfs_raw'] },
   { id: 'barbs', label: '风向杆', unit: 'kt', cat: 'wind', cmap: WIND, special: 'barbs', fmt: (v) => String(Math.round(convV('wind', v))) },
   { id: 'temp', label: '温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'temp', fmt: (v) => String(Math.round(convV('temp', v))) },
   { id: 'feels', label: '体感', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'feels', fmt: (v) => String(Math.round(convV('temp', v))) },
@@ -112,11 +123,17 @@ const LAYERS = [
   { id: 'dew', label: '露点', unit: '°C', cat: 'temp', cmap: DEW, variable: 'dew', fmt: (v) => String(Math.round(convV('temp', v))) },
   { id: 'humidity', label: '湿度', unit: '%', cmap: RH, variable: 'rh', fmt: (v) => Math.round(v), levels: true },
   { id: 'frzlvl', label: '0°C层高度', unit: 'm', cmap: FRZLVL, variable: 'frzlvl', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
+  { id: 'solar', label: '太阳辐射', unit: 'W/m²', cmap: SOLAR, variable: 'dswrf', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
+  { id: 'icing', label: '积冰风险', unit: '%', cmap: ICING, variable: 'icing', fmt: (v) => (v >= 60 ? '强' : v >= 30 ? '中' : v > 5 ? '轻' : '—'), models: ['gfs_raw'] },
+  { id: 'cat', label: '晴空湍流', unit: 'TI', cmap: CATC, variable: 'cat', fmt: (v) => (v >= 4.5 ? '强' : v >= 2 ? '中' : v > 0.4 ? '轻' : '—'), models: ['gfs_raw'] },
+  { id: 'thermals', label: '热气流·边界层顶', unit: 'm', cmap: FRZLVL, variable: 'hpbl', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
   { id: 'cloud', label: '总云量', unit: '%', cmap: CLOUD, variable: 'cloud', fmt: (v) => Math.round(v) },
   { id: 'lcdc', label: '低云', unit: '%', cmap: CLOUD, variable: 'lcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'mcdc', label: '中云', unit: '%', cmap: CLOUD, variable: 'mcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'hcdc', label: '高云', unit: '%', cmap: CLOUD, variable: 'hcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'cwat', label: '云水', unit: 'mm', cmap: CWAT, variable: 'cwat', fmt: (v) => v.toFixed(2), models: ['gfs_raw'] },
+  { id: 'cloudbase', label: '云底高度', unit: 'm', cmap: FRZLVL, variable: 'cloudbase', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
+  { id: 'cloudtop', label: '云顶高度', unit: 'm', cmap: FRZLVL, variable: 'cloudtop', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
   { id: 'fog', label: '雾', unit: '', cmap: FOG, variable: 'fog', fmt: (v) => ['—', '可能', '大概率', '雾'][Math.round(v)] || '' },
   { id: 'precip', label: '降水', unit: 'mm/h', cat: 'precip', cmap: PRECIP, variable: 'precip', fmt: (v) => fmtPrecipStr(v) },
   { id: 'precip24', label: '降水·24h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip24', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
@@ -128,11 +145,13 @@ const LAYERS = [
   { id: 'cape', label: '雷暴 CAPE', unit: 'J/kg', cmap: CAPE, variable: 'cape', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
+  { id: 'extprob', label: '极端天气概率', unit: '%', cmap: EXTPROB, variable: 'extprob', fmt: (v) => String(Math.round(v)), models: ['gefs_raw'] },
   { id: 'pressure', label: '气压', unit: 'hPa', cat: 'pressure', cmap: MSL, variable: 'msl', fmt: (v) => fmtPresStr(v), isobars: true },
   { id: 'gph', label: '位势高度', unit: 'm', cmap: gphCmap(500), variable: 'h', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'], levels: true, isolines: true },
   { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
   { id: 'soilt', label: '土壤温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'soilt', fmt: (v) => String(Math.round(convV('temp', v))), models: ['gfs_raw'] },
   { id: 'fire', label: '火险', unit: 'CBI', cmap: FIRE, variable: 'fire', fmt: (v) => (v >= 97.5 ? '极端' : v >= 90 ? '很高' : v >= 75 ? '高' : v >= 50 ? '中' : v >= 20 ? '低' : '—'), models: ['gfs_raw'] },
+  { id: 'ffmc', label: '可燃物含水率', unit: '%', cmap: FFMC, variable: 'ffmc', fmt: (v) => (v >= 25 ? '湿' : v >= 16 ? '适中' : v >= 10 ? '干' : '极干'), models: ['gfs_raw'] },
   { id: 'wpd', label: '风功率密度', unit: 'W/m²', cmap: WPD, variable: 'wpd', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
   { id: 'ssta', label: '海温距平', unit: '°C', cmap: SSTA, variable: 'ssta', fmt: (v) => (v > 0 ? '+' : '') + (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1)), models: ['ocean_raw'], maskLand: true },
   { id: 'dust', label: '沙尘', unit: 'µg/m³', cmap: DUST, variable: 'dust', fmt: (v) => Math.round(v), models: ['chem_raw'] },
@@ -145,11 +164,16 @@ const LAYERS = [
   { id: 'bcf', label: '黑碳', unit: 'µg/m³', cmap: SMOKE, variable: 'bc', fmt: (v) => Math.round(v), models: ['chem_raw'] },
   { id: 'nif', label: '硝酸盐', unit: 'µg/m³', cmap: NIF, variable: 'ni', fmt: (v) => Math.round(v), models: ['chem_raw'] },
   { id: 'co2f', label: '二氧化碳', unit: 'ppm', cmap: CO2F, variable: 'co2', fmt: (v) => v.toFixed(1), models: ['chem_raw'] },
+  { id: 'cof', label: '一氧化碳', unit: 'µg/m³', cmap: COCM, variable: 'co', fmt: (v) => String(Math.round(v)), models: ['chem_raw'] },
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
   { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
-  { id: 'swvh', label: '涌浪高度', unit: 'm', cmap: WAVES, variable: 'swvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
-  { id: 'swvp', label: '涌浪周期', unit: 's', cmap: WPER, variable: 'swvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'swvh', label: '涌浪1·高度', unit: 'm', cmap: WAVES, variable: 'swvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'swvp', label: '涌浪1·周期', unit: 's', cmap: WPER, variable: 'swvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'sw2h', label: '涌浪2·高度', unit: 'm', cmap: WAVES, variable: 'sw2h', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'sw2p', label: '涌浪2·周期', unit: 's', cmap: WPER, variable: 'sw2p', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'sw3h', label: '涌浪3·高度', unit: 'm', cmap: WAVES, variable: 'sw3h', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'sw3p', label: '涌浪3·周期', unit: 's', cmap: WPER, variable: 'sw3p', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wwh', label: '风浪高度', unit: 'm', cmap: WAVES, variable: 'wwh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wwp', label: '风浪周期', unit: 's', cmap: WPER, variable: 'wwp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wve', label: '波浪能量', unit: 'kW/m', cmap: WENERGY, variable: 'wve', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))), models: ['waves_raw'], maskLand: true },
@@ -196,16 +220,18 @@ const LAYERS = [
 const GROUPS = [
   { id: 'obs', label: '观测', layers: ['radar'] },
   { id: 'satobs', label: '卫星观测', layers: ['fires', 'imerg', 'lst', 'smap', 'frozen', 'ndvi', 'aerosol', 'chl', 'seaice', 'vapor'] },
-  { id: 'wind', label: '风', layers: ['wind', 'gust', 'barbs', 'wpd'] },
+  { id: 'wind', label: '风', layers: ['wind', 'gust', 'gustmax', 'barbs', 'wpd'] },
   { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl'] },
-  { id: 'cloud', label: '云雨', layers: ['cloud', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
+  { id: 'sun', label: '太阳', layers: ['solar'] },
+  { id: 'cloud', label: '云雨', layers: ['cloud', 'cloudbase', 'cloudtop', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
+  { id: 'aviation', label: '航空', layers: ['icing', 'cat', 'thermals'] },
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
-  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure', 'gph'] },
+  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'extprob', 'pressure', 'gph'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
-  { id: 'fire', label: '火险', layers: ['fire'] },
-  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst', 'ssta'] },
+  { id: 'fire', label: '火险', layers: ['fire', 'ffmc'] },
+  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p', 'wwh', 'wwp', 'wve', 'sst', 'ssta'] },
   { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
-  { id: 'chem', label: '空气场', layers: ['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f'] },
+  { id: 'chem', label: '空气场', layers: ['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f', 'cof'] },
 ];
 
 /* 当前图层渲染所需的原始变量(派生图层映射到其数据来源) */
@@ -215,6 +241,7 @@ function varNeeds(def) {
     wind: ['u', 'v'], gust: ['gust'], barbs: ['u', 'v'],
     feels: ['temp', 'rh', 'u', 'v'], wetbulb: ['temp', 'rh'], dew: ['temp', 'rh'], ptype: ['temp', 'precip'],
     fog: ['rh'],
+    cloudbase: ['temp', 'rh'], ffmc: ['temp', 'rh', 'precip'], /* live 模式由服务端同公式派生 */
   };
   return M[def.variable] || [def.variable];
 }

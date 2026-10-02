@@ -18,7 +18,7 @@ concurrency:
 jobs:
   ingest-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150 # 涌浪 2/3 分区使捆包布局变更,首轮全量重摄
     steps:
       - uses: actions/checkout@v4
 

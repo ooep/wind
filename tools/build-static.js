@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const gfs = require('../server/gfs');
 const waves = require('../server/waves');
+const { icingIndex, catGrid } = require('../server/derive');
 
 function arg(name, dflt) {
   const i = process.argv.indexOf('--' + name);
@@ -38,13 +39,13 @@ const WANT_TILES = flag('tiles');
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
 /* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
-const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10, wpd: 1 }; // 烘焙端派生量:降水累计 mm(0.1)、火险 CBI 0.1、风功率密度 W/m²
+const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10, wpd: 1, ffmc: 10, gustmax: 100, icing: 10, cat: 100, extprob: 10 }; // 烘焙端派生量:降水累计/可燃物含水率 0.1、火险 CBI 0.1、风功率密度 W/m²、过程最大阵风 0.01、积冰 0.1%、CAT 0.01、极端概率 0.1%
 function varScale(model, vk) {
   const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
   if (model === 'ocean_raw') return (base === 'sst' || base === 'ssta') ? 100 : 1;
   if (model === 'gfs_raw' || model === 'gfs_snow') {
     if (DERIVED_SCALE[base]) return DERIVED_SCALE[base];
-    const cfg = gfs.surfaceEngine.varCfg[base];
+    const cfg = gfs.surfaceEngine.varCfg[base] || (gfs.surfaceEngineX && gfs.surfaceEngineX.varCfg[base]);
     if (cfg) return cfg.scale;
   } else {
     if (model === 'waves_raw') {
@@ -67,6 +68,53 @@ function guardEmptyData(vals, label) {
     console.error(`✗ ${label} 有效值仅 ${(finite / vals.length * 100).toFixed(2)}%,判定上游摄取失败,拒绝发布(线上保留旧包)`);
     process.exit(1);
   }
+}
+
+/* GEFS 扰动成员极端天气概率:逐成员采样 coarse 网格(2.5°),统计
+ * 大风(10m ≥ 13.9 m/s)或强降水(≥ 4 mm/h,APCP 按 idx 累积窗换算)的成员占比。
+ * 成员引擎串行摄取/采样(控内存),时间轴与控制成员逐帧对齐,不齐则弃该成员。 */
+async function bakeExtremes(coarse, nMembers) {
+  const { gefsMemberEngine } = require('../server/nwp');
+  const nP = coarse.lons.length * coarse.lats.length;
+  const P = coarse.times.length;
+  const counts = new Float32Array(P * nP);
+  let ok = 0;
+  for (let n = 1; n <= nMembers; n++) {
+    const tag = `gep${String(n).padStart(2, '0')}`;
+    let eng;
+    try {
+      eng = gefsMemberEngine(n);
+      const run = await eng.ensureLoaded();
+      const idxMap = coarse.times.map((t) => run.times.indexOf(t));
+      if (idxMap.some((i) => i < 0)) throw new Error('时间轴与控制成员不一致');
+      for (let t = 0; t < P; t++) {
+        const tt = run.times[idxMap[t]];
+        for (let j = 0; j < coarse.lats.length; j++) {
+          for (let i = 0; i < coarse.lons.length; i++) {
+            const s2 = eng.sampleAll(tt.runKey, tt.step, coarse.lats[j], coarse.lons[i]);
+            if (!s2) continue;
+            const spd = Number.isFinite(s2.u) && Number.isFinite(s2.v) ? Math.hypot(s2.u, s2.v) : NaN;
+            if ((Number.isFinite(spd) && spd >= 13.9) || (Number.isFinite(s2.precip) && s2.precip >= 4)) {
+              counts[t * nP + j * coarse.lons.length + i] += 1;
+            }
+          }
+        }
+      }
+      ok++;
+      console.log(`  GEFS 成员 ${tag} 完成(${ok}/${nMembers})`);
+    } catch (e) {
+      console.error(`  GEFS 成员 ${tag} 失败: ${e.message}`);
+    }
+  }
+  if (ok < 4) return null;
+  const out = new Float32Array(P * nP);
+  let peak = 0;
+  for (let i = 0; i < out.length; i++) {
+    out[i] = (counts[i] / ok) * 100;
+    if (out[i] > peak) peak = out[i];
+  }
+  console.log(`  极端天气概率完成(${ok} 成员,峰值 ${peak.toFixed(0)}%)`);
+  return Buffer.from(out.buffer, out.byteOffset, out.byteLength).toString('base64');
 }
 
 async function main() {
@@ -245,6 +293,18 @@ async function main() {
       console.log(`  风功率密度完成(峰值 ${Math.round(peak)} W/m²)`);
     }
 
+    // GEFS 扰动成员极端天气概率(%):10m 风速 ≥ 13.9 m/s(7 级)或降水 ≥ 4 mm/h 的
+    // 成员超越率逐帧输出;成员引擎独立缓存,≥4 个成员成功才发布(不足则该层缺失)
+    if (model === 'gefs_raw') {
+      try {
+        const prob = await bakeExtremes(coarse, Number(arg('ens-members', '10')));
+        if (prob) coarse.vars.extprob = prob;
+        else console.error('  GEFS 有效成员不足 4 个,本轮不发布极端天气概率');
+      } catch (e) {
+        console.error(`  极端天气概率失败,跳过: ${e.message}`);
+      }
+    }
+
     // meta:网格形状 + 变量清单(前端据此懒加载)
     const varsManifest = {};
     for (const [vk, b64] of Object.entries(coarse.vars)) {
@@ -285,6 +345,18 @@ async function main() {
     // 单层失败只跳过该层,不株连整轮(地面包与已完成层照常发布)
     if (model === 'gfs_raw') {
       let levelKeys = 0;
+      /* 跨层派生累积器(2.5° 粗网格,内存占用 ≈ 80 帧 × 1 万点 × 4B,可忽略):
+       * icing 各层取最大 / cloudtop 取 RH≥70% 的最高层位势高度 / cat 相邻层对 Ellrod TI 取最大 */
+      const nPts = coarse.lons.length * coarse.lats.length;
+      const P = coarse.times.length;
+      const icing = new Float32Array(P * nPts).fill(NaN);
+      const cloudtop = new Float32Array(P * nPts).fill(NaN);
+      const cat = new Float32Array(P * nPts).fill(NaN);
+      let prev = null; // 上一层的 u/v/h(Float32),供 CAT 层对计算
+      let prevLevel = null;
+      const ICING_LEVELS = new Set([925, 850, 700, 500]);
+      const CLOUDTOP_LEVELS = new Set([925, 850, 700, 500, 300, 250]);
+      const CAT_PAIRS = new Set(['500-300', '300-250', '250-200', '200-150']);
       for (const level of gfs.LEVELS) {
         let lg;
         try {
@@ -297,6 +369,39 @@ async function main() {
           console.error(`  气压层 ${level} hPa 时间轴与地面不一致(${lg.times.length} vs ${coarse.times.length} 帧),跳过`);
           continue;
         }
+        const dec = (b64) => {
+          const b = Buffer.from(b64, 'base64');
+          return new Float32Array(b.buffer, b.byteOffset, b.length / 4);
+        };
+        const cur = {
+          u: lg.vars.u ? dec(lg.vars.u) : null,
+          v: lg.vars.v ? dec(lg.vars.v) : null,
+          h: lg.vars.h ? dec(lg.vars.h) : null,
+          temp: lg.vars.temp ? dec(lg.vars.temp) : null,
+          rh: lg.vars.rh ? dec(lg.vars.rh) : null,
+        };
+        if (ICING_LEVELS.has(level) && cur.temp && cur.rh) {
+          for (let i = 0; i < icing.length; i++) {
+            const v = icingIndex(cur.temp[i], cur.rh[i]);
+            if (!Number.isFinite(v)) continue;
+            icing[i] = Number.isNaN(icing[i]) ? v : Math.max(icing[i], v);
+          }
+        }
+        if (CLOUDTOP_LEVELS.has(level) && cur.rh && cur.h) {
+          for (let i = 0; i < cloudtop.length; i++) {
+            if (Number.isNaN(cur.rh[i]) || cur.rh[i] < 70 || Number.isNaN(cur.h[i])) continue;
+            cloudtop[i] = Number.isNaN(cloudtop[i]) ? cur.h[i] : Math.max(cloudtop[i], cur.h[i]);
+          }
+        }
+        if (prev && prev.u && prev.v && prev.h && cur.u && cur.v && cur.h && CAT_PAIRS.has(`${prevLevel}-${level}`)) {
+          // 层级按 925→150 顺序处理:prev 为较低高度层,cur 为较高层,dz = h_cur − h_prev > 0
+          const g = catGrid(prev.u, prev.v, prev.h, cur.u, cur.v, cur.h, coarse.lons.length, coarse.lats.length, COARSE_DEG);
+          for (let i = 0; i < cat.length; i++) {
+            if (Number.isNaN(g[i])) continue;
+            cat[i] = Number.isNaN(cat[i]) ? g[i] : Math.max(cat[i], g[i]);
+          }
+        }
+        prev = cur; prevLevel = level;
         for (const [vk, b64] of Object.entries(lg.vars)) {
           const f32 = Buffer.from(b64, 'base64');
           const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
@@ -315,6 +420,22 @@ async function main() {
           levelKeys++;
         }
         console.log(`  气压层 ${level} hPa 完成`);
+      }
+      /* 跨层派生包:与层级包同一批发布(任一累积器有数据即写) */
+      for (const [vk, arr, scl] of [['icing', icing, 10], ['cat', cat, 100], ['cloudtop', cloudtop, 1]]) {
+        if (arr.every(Number.isNaN)) continue;
+        guardEmptyData(arr, `${model}.${vk}`);
+        const q = new Int16Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+          const v = arr[i];
+          q[i] = Number.isNaN(v) ? -32768 : Math.max(-32767, Math.min(32767, Math.round(v * scl)));
+        }
+        const file = path.join(outDir, `v_${vk}.json`);
+        fs.writeFileSync(file, JSON.stringify({ scale: scl, data: Buffer.from(q.buffer).toString('base64') }));
+        total += fs.statSync(file).size;
+        varsManifest[vk] = { scale: scl, file: `v_${vk}.json` };
+        levelKeys++;
+        console.log(`  跨层派生 v_${vk}.json 完成`);
       }
       if (levelKeys) fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta)); // 回写含层级键的 meta
       else console.error('  未写入任何层级包,meta 保持仅地面变量');

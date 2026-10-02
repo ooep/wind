@@ -4,11 +4,11 @@
  * 数据:gfs.YYYYMMDD/HH/wave/gridded/gfswave.tHHz.global.0p25.fXXX.grib2
  *   HTSGW 有效波高(m)/ PERPW 主波周期(s)/ DIRPW 主波方向(度,来向)
  *   WVHGT 风浪高(m)/ WVPER 风浪周期(s)
- *   SWELL/SWPER 涌浪高/周期 — idx level 为 "N in sequence"(第 N 分区),取第 1 分区为主涌浪
+ *   SWELL/SWPER 涌浪高/周期 — idx level 为 "N in sequence"(第 N 分区),1/2/3 分向全取
  *   DRT 5.40(JPEG2000):由 grib2.js 调 python3+Pillow 解码(见 server/j2k.py)
  *
- * 存储:0.5° 全球网格 Int16 捆包(wvh/wvp/wvd/swvh/swvp/wwh/wwp),u/v 传播矢量与
- *   wve 波浪能量在 rawGrid 输出时现场派生,不落盘。
+ * 存储:0.5° 全球网格 Int16 捆包(wvh/wvp/wvd/wwh/wwp/swvh/swvp/sw2h/sw2p/sw3h/sw3p),
+ *   u/v 传播矢量与 wve 波浪能量在 rawGrid 输出时现场派生,不落盘。
  */
 'use strict';
 
@@ -33,12 +33,16 @@ const VARCFG = {
   wwp: { grib: 'WVPER', level: 'surface', scale: 100, conv: (v) => v },
   swvh: { grib: 'SWELL', level: '1 in sequence', scale: 100, conv: (v) => v },
   swvp: { grib: 'SWPER', level: '1 in sequence', scale: 100, conv: (v) => v },
+  sw2h: { grib: 'SWELL', level: '2 in sequence', scale: 100, conv: (v) => v },
+  sw2p: { grib: 'SWPER', level: '2 in sequence', scale: 100, conv: (v) => v },
+  sw3h: { grib: 'SWELL', level: '3 in sequence', scale: 100, conv: (v) => v },
+  sw3p: { grib: 'SWPER', level: '3 in sequence', scale: 100, conv: (v) => v },
   u: { scale: 100, derived: true },
   v: { scale: 100, derived: true },
   /* 波浪能量通量 kW/m ≈ (ρg²/64π)·Hs²·Te ≈ 0.49·Hs²·Te */
   wve: { scale: 10, derived: true },
 };
-const VARKEYS = ['wvh', 'wvp', 'wvd', 'wwh', 'wwp', 'swvh', 'swvp'];
+const VARKEYS = ['wvh', 'wvp', 'wvd', 'wwh', 'wwp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p'];
 
 const WAVES = {
   id: 'waves_raw',

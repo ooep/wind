@@ -26,7 +26,8 @@ SRC = {'aer': BASE + 'tavg3_2d_aer_Nx', 'chm': BASE + 'tavg3_2d_chm_Nx'}
 NI, NJ = 576, 361   # 0.5° 全球网格(lon 0..359.5 / lat 90..-90)
 FRAMES = 2          # 取最近 2 个共同时次(当前 + 3h 前)
 
-# 图层键 → (源集合, 源变量, scale, 描述, 换算)  conv='kgug':kg/m³→µg/m³;None:原值直出
+# 图层键 → (源集合, 源变量, scale, 描述, 换算)  conv='kgug':kg/m³→µg/m³;
+# 'ppbv2ug':ppbv→µg/m³(25°C/1atm);None:原值直出
 VARS = {
     'dust':  ('aer', 'dusmass',   10,  '沙尘地表质量浓度 µg/m³', 'kgug'),
     'pm25':  ('aer', 'pm25',      10,  'PM2.5 地表质量浓度 µg/m³', 'kgug'),
@@ -37,6 +38,7 @@ VARS = {
     'oc':    ('aer', 'ocsmass',   10,  '有机碳(烟)地表质量浓度 µg/m³', 'kgug'),
     'bc':    ('aer', 'bcsmass',   10,  '黑碳地表质量浓度 µg/m³', 'kgug'),
     'ni':    ('aer', 'nismass',   100, '硝酸盐地表质量浓度 µg/m³', 'kgug'),
+    'co':    ('chm', 'cosc',      1,   'CO 地表浓度 µg/m³(体积比 ppbv × 1.145)', 'ppbv2ug'),
     'co2':   ('chm', 'co2sc',     10,  'CO2 地表浓度 ppmv(GEOS 直出,免换算)', None),
 }
 KGUG = 1e9  # kg/m³ → µg/m³
@@ -68,7 +70,11 @@ def grid_of(ds, var, ti: int, conv) -> np.ndarray:
         shift = int(np.argmin(np.abs(lons - (-180.0))))
         a = np.roll(a, -shift, axis=1)
     a = a[::2, ::2]  # 0.25°×0.3125° → 0.5°
-    return a * KGUG if conv == 'kgug' else a
+    if conv == 'kgug':
+        return a * KGUG
+    if conv == 'ppbv2ug':
+        return a * 1.145  # ppbv → µg/m³(25°C,1atm,M_CO=28.01)
+    return a
 
 
 def main():
@@ -116,6 +122,9 @@ def main():
             if var == 'co2':  # 保守钳制到物理范围(防归档异常值)
                 for f in fs:
                     f[(f < 350) | (f > 600)] = np.nan
+            if var == 'co':   # CO 背景约 100-200 µg/m³,火羽流可上万;钳掉负值与归档异常
+                for f in fs:
+                    f[(f < 0) | (f > 40000)] = np.nan
             peak = max(float(np.nanmax(f)) for f in fs)
             frames[var] = fs
             print(f'  [chem] {var}({desc})完成,峰值 {peak:.2f}')

@@ -206,6 +206,56 @@ const GEFS_VARS = {
 
 GEFS.varCfg = GEFS_VARS;
 
+/* ---------------- GEFS 扰动成员引擎(极端天气概率用) ----------------
+ * 只取 10m 风 + 降水两个变量 × gep01..gepNN;控制成员 pgrb2a 无 GUST,
+ * 大风指标由 u/v 合成风速替代。APCP 累积窗口不固定(3h/6h 交替),
+ * 按 idx 时间窗动态换算 mm/h(控制成员的固定 /3 在 6h 窗口帧会高估 2 倍)。 */
+const MEMBER_VARS = {
+  u: { grib: 'UGRD', level: '10 m above ground', scale: 100, conv: (v) => v },
+  v: { grib: 'VGRD', level: '10 m above ground', scale: 100, conv: (v) => v },
+  precip: { grib: 'APCP', level: 'surface', scale: 100, conv: (v) => v }, // conv 按窗口动态替换
+};
+function gefsMemberEngine(n) {
+  const member = `gep${String(n).padStart(2, '0')}`;
+  const def = {
+    id: `gefs_m${n}`,
+    label: `NOAA GEFS 集合成员 ${member} 0.5°(AWS 开放数据,极端天气概率用)`,
+    varKeys: Object.keys(MEMBER_VARS),
+    varCfg: MEMBER_VARS,
+    grid: { ni: 720, nj: 361, lon0: 0, dlon: 0.5, lat0: 90, dlat: 0.5 },
+    maxF: GEFS.maxF, stepH: 3, concurrency: 6,
+    store: null,
+    init() {
+      this.store = new StepStore(path.join(__dirname, '..', '.cache', `nwp-gefs-m${n}`), this.varKeys, 720, 361);
+    },
+    granularity() { return 3; },
+    steps: GEFS.steps,
+    discoverRuns: GEFS.discoverRuns,
+    async fetchVarStep(runKey, step, varKey) {
+      const hh = runKey.split('/')[1];
+      const fileTag = `f${String(step).padStart(3, '0')}`;
+      const url = `${S3GEFS}/gefs.${runKey}/atmos/pgrb2ap5/${member}.t${hh}z.pgrb2a.0p50.${fileTag}`;
+      const recs = parseGfsStyleIdx(await fetchBuf(`${url}.idx`));
+      const cfg = MEMBER_VARS[varKey];
+      const rec = recs.find((x) => x.var === cfg.grib && x.level === cfg.level && /acc|ave/.test(x.ts) === (varKey === 'precip'));
+      if (!rec) throw new Error(`idx 中未找到 ${varKey}`);
+      let conv = cfg.conv;
+      if (varKey === 'precip') {
+        const wm = /(\d+)-(\d+) hour acc/.exec(rec.ts);
+        const win = wm ? Math.max(1, Number(wm[2]) - Number(wm[1])) : 3;
+        conv = (v) => v / win; // 累积窗口小时数 → mm/h
+      }
+      const data = await fetchBuf(url, 5, { Range: `bytes=${rec.start}-${rec.end - 1}` });
+      const total = Number(data.readBigUInt64BE(8));
+      const msg = findMessages(total <= data.length ? data : data.subarray(0, total))[0];
+      if (!msg) throw new Error('Range 内未找到 GRIB 消息');
+      return normalizeGrid(decodeMessage(msg), this.grid, { ...cfg, conv });
+    },
+    gridOf() { return this.grid; },
+  };
+  return new ModelEngine(def);
+}
+
 /* 解析 GFS/GEFS 风格 idx(容忍列差异) */
 function parseGfsStyleIdx(buf) {
   const text = buf.toString('utf8');
@@ -730,5 +780,5 @@ function status() {
 module.exports = {
   ENGINES, status, rhFromDewpoint,
   ModelEngine, fetchBuf, normalizeGrid, StepStore, makeSampler,
-  parseGfsStyleIdx, utcStr, ecmwfLike, S3ECMWF,
+  parseGfsStyleIdx, utcStr, ecmwfLike, S3ECMWF, gefsMemberEngine,
 };

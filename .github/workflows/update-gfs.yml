@@ -17,7 +17,7 @@ concurrency:
 jobs:
   ingest-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 180 # 层级包加入位势高度后消息数 +25%(约 2770 条),按 ~160 分钟留余量
+    timeout-minutes: 180 # 层级包+X 变量(辐射/边界层)后约 3200 条,按余量 180 分钟
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +31,7 @@ jobs:
         with:
           path: |
             .cache/gfsraw
+            .cache/gfsraw-x
             .cache/gfsraw-l925
             .cache/gfsraw-l850
             .cache/gfsraw-l700
@@ -55,6 +56,7 @@ jobs:
         with:
           path: |
             .cache/gfsraw
+            .cache/gfsraw-x
             .cache/gfsraw-l925
             .cache/gfsraw-l850
             .cache/gfsraw-l700

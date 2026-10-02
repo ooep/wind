@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { findMessages, decodeMessage } = require('./grib2');
+const { lclHeight, fineFuelMoisture, cumMaxFrames } = require('./derive');
 
 const S3 = 'https://noaa-gfs-bdp-pds.s3.amazonaws.com';
 const RES = '0p50';
@@ -57,6 +58,16 @@ const VARS = {
   frzlvl: { grib: 'HGT', level: '0C isotherm', scale: 1, conv: (v) => v },                   // 0°C 层高度 m
   cin: { grib: 'CIN', level: 'surface', scale: 1, conv: (v) => v },                          // 对流抑制 J/kg(负值)
   newsnow: { grib: 'WEASD', level: 'surface', scale: 10, conv: (v) => v },                   // 新雪:WEASD 差分 ×10(1mm 水 ≈ 1cm 雪),见 ingestOne
+};
+
+/* X 变量:辐射/边界层/热通量。独立引擎目录(不与主 VARS 同捆包)——
+ * 捆包布局变更会使整个 .done 缓存失效触发全量重摄,拆开只影响新变量自身。
+ * DSWRF/SHTFL/LHTFL 是时段平均场(idx 为 "N-M hour ave"),需 ave 匹配。 */
+const VARS_X = {
+  dswrf: { grib: 'DSWRF', level: 'surface', scale: 1, conv: (v) => v, ave: true },           // 下行短波辐射 W/m²(时段平均)
+  hpbl: { grib: 'HPBL', level: 'surface', scale: 1, conv: (v) => v },                        // 边界层厚度 m(瞬时,热气流顶估算)
+  shtfl: { grib: 'SHTFL', level: 'surface', scale: 1, conv: (v) => v, ave: true },           // 感热通量 W/m²(向上为正)
+  lhtfl: { grib: 'LHTFL', level: 'surface', scale: 1, conv: (v) => v, ave: true },           // 潜热通量 W/m²(向上为正)
 };
 
 /* 气压层变量(按需摄取):该层的风/温/湿 + 位势高度 */
@@ -158,6 +169,7 @@ function pickMessage(recs, varCfg) {
   for (const r of recs) {
     if (r.var !== varCfg.grib || r.level !== varCfg.level) continue;
     const ts = r.timeSpec;
+    if (varCfg.ave) { if (/ave/.test(ts)) return r; continue; } // 辐射/热通量等时段平均场
     if (/ave|acc/.test(ts)) continue; // 只要瞬时场
     return r;
   }
@@ -424,6 +436,11 @@ class GfsEngine {
         this.writeVar(runKey, step, varKey, new Int16Array(NJ * NI).fill(varKey === 'precip' ? 0 : SENTINEL));
         return;
       }
+      // 平均量在 f000 无 preceding 窗口(如 DSWRF "0-0 hour" 不存在):分析时刻按 0 通量兜底
+      if (step === 0 && this.varCfg[varKey] && this.varCfg[varKey].ave) {
+        this.writeVar(runKey, step, varKey, new Int16Array(NJ * NI));
+        return;
+      }
       throw new Error(`idx 中未找到 ${varKey}(${cfg.grib})`);
     }
     const msg = await fetchMessage(url, recs, rec);
@@ -500,6 +517,7 @@ class GfsEngine {
 }
 
 const surface = new GfsEngine({ varCfg: VARS, dirName: 'gfsraw' });
+const surfaceX = new GfsEngine({ varCfg: VARS_X, dirName: 'gfsraw-x' });
 const levelEngines = new Map();
 function levelEngine(level) {
   if (!LEVELS.includes(level)) throw new Error(`不支持的气压层 ${level}`);
@@ -515,11 +533,45 @@ function isoTime(ms) {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:00`;
 }
 
+/* 派生地面量(只用主引擎变量,live 与静态烘焙同源):云底 LCL / 可燃物含水率 /
+ * 过程最大阵风(运行最大)。必须在层级变量合并前调用(2m 温湿不受层级覆盖)。 */
+function deriveSurfaceGrids(vars, nT, nP) {
+  const f32 = (k) => {
+    if (!vars[k]) return null;
+    const b = Buffer.from(vars[k], 'base64');
+    return new Float32Array(b.buffer, b.byteOffset, b.length / 4);
+  };
+  const enc = (arr) => Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString('base64');
+  const T = f32('temp'), R = f32('rh'), PR = f32('precip'), G = f32('gust');
+  if (T && R) {
+    const base = new Float32Array(nT * nP), fuel = new Float32Array(nT * nP);
+    for (let i = 0; i < base.length; i++) {
+      base[i] = lclHeight(T[i], R[i]);
+      fuel[i] = fineFuelMoisture(T[i], R[i], PR ? PR[i] : NaN);
+    }
+    vars.cloudbase = enc(base);
+    vars.ffmc = enc(fuel);
+  }
+  if (G) vars.gustmax = enc(cumMaxFrames(G, nT, nP));
+}
+
 /* ---------------- 对外:格点(地面 / 气压层合并) ---------------- */
 
 async function rawGrid(w, s, e, n, stepDeg, level = 0) {
   const base = await surface.gridCore(w, s, e, n, stepDeg);
   const vars = { ...base.vars };
+  deriveSurfaceGrids(vars, base.times.length, base.lons.length * base.lats.length);
+  /* X 变量(辐射/边界层):独立引擎,失败或时间轴不齐时跳过、不株连主包 */
+  try {
+    const xg = await surfaceX.gridCore(w, s, e, n, stepDeg);
+    if (xg.times.length === base.times.length && xg.times[0] === base.times[0]) {
+      Object.assign(vars, xg.vars);
+    } else {
+      console.warn(`  [GFS] X 引擎时间轴与地面不一致(${xg.times.length} vs ${base.times.length} 帧),跳过`);
+    }
+  } catch (e) {
+    console.warn(`  [GFS] X 引擎不可用,跳过辐射/边界层变量: ${e.message}`);
+  }
   if (level > 0) {
     const lev = await levelEngine(level).gridCore(w, s, e, n, stepDeg);
     for (const vk of ['u', 'v', 'temp', 'rh', 'h']) vars[vk] = lev.vars[vk];
@@ -690,4 +742,4 @@ async function levelRawGrid(level, w, s, e, n, stepDeg) {
   return out;
 }
 
-module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, levelRawGrid, buildSteps };
+module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, surfaceEngineX: surfaceX, levelRawGrid, buildSteps };
