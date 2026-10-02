@@ -195,11 +195,12 @@ async function staticGlobalGrid(model, entry) {
   return gridObj;
 }
 
+/* 点位预报固定走大气基准模式:海浪/海温/化学/雪包等专用模式无完整大气要素 */
+const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
+
 /* 静态模式:点预报由本地格点插值合成(与 /api/point 响应同构);needs 可精简(对比 tab 只需温/风) */
 async function staticPoint(lat, lon, model, needs) {
-  if (model === 'waves_raw') return staticPointWaves(lat, lon, model);
-  /* 高分辨雪包只含雪变量,点位预报常规要素沿用地面 GFS 包 */
-  if (model === 'gfs_snow') model = 'gfs_raw';
+  model = POINT_BASE[model] || model;
   const grid = await staticModelGrid(model, needs || ['temp', 'rh', 'precip', 'cloud', 'msl', 'u', 'v', 'gust']);
   const times = grid.times; // Grid 构造时已解析为毫秒
   const fr = { i0: 0, i1: 0, f: 0 };
@@ -313,43 +314,6 @@ export function staticHasModel(m) {
 /* 同步查询:静态模式清单是否已加载(未加载时调用方不应据此置灰图层或过滤选择器) */
 export function staticAvailReady() {
   return !!staticAvailCache;
-}
-
-/* 海浪模式点位:波高/周期/方向系列,大气要素为 null(面板走海洋视图) */
-async function staticPointWaves(lat, lon, model) {
-  const grid = await staticModelGrid(model, ['wvh', 'wvp', 'wvd']);
-  const times = grid.times.map((t) => Date.parse(t + ':00Z'));
-  const fr = { i0: 0, i1: 0, f: 0 };
-  const series = times.map((ms, ti) => {
-    fr.i0 = ti; fr.i1 = ti; fr.f = 0;
-    return {
-      ms,
-      wvh: grid.sample('wvh', lon, lat, fr),
-      wvp: grid.sample('wvp', lon, lat, fr),
-      wvd: grid.sample('wvd', lon, lat, fr),
-    };
-  });
-  const r2 = (v) => (Number.isFinite(v) ? +v.toFixed(2) : null);
-  const r1 = (v) => (Number.isFinite(v) ? +v.toFixed(1) : null);
-  const cur = series.find((x) => x.ms <= Date.now() + 1800e3 && Number.isFinite(x.wvh)) || series[0];
-  return {
-    source: `静态数据包(${model}),浏览器本地插值`,
-    current: {
-      temperature_2m: null, relative_humidity_2m: null, apparent_temperature: null,
-      is_day: 1, precipitation: null, weather_code: null, cloud_cover: null,
-      pressure_msl: null, wind_speed_10m: null, wind_direction_10m: null, wind_gusts_10m: null,
-      wave_height: r2(cur.wvh), wave_period: r1(cur.wvp),
-      wave_direction: Number.isFinite(cur.wvd) ? Math.round(cur.wvd) : null,
-    },
-    hourly: {
-      time: series.map((x) => naiveLocal(x.ms)),
-      temperature_2m: series.map(() => null),
-      wave_height: series.map((x) => r2(x.wvh)),
-      wave_period: series.map((x) => r1(x.wvp)),
-      wave_direction: series.map((x) => (Number.isFinite(x.wvd) ? Math.round(x.wvd) : null)),
-    },
-    daily: null,
-  };
 }
 
 function naiveLocal(ms) {

@@ -18,6 +18,15 @@ const WMO = {
 };
 const wmo = (c) => WMO[c] || ['—', '🌡️'];
 const p2 = (n) => String(n).padStart(2, '0');
+/* 点位预报固定走大气基准模式:海浪/海温/化学/雪包等专用模式无完整大气要素,
+ * 点击点位始终展示通用天气面板(海浪详情由「海浪」标签页按需获取,与模式无关) */
+const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
+const POINT_MODEL_LABELS = {
+  gfs_raw: 'NOAA GFS 0.5°(自建管道)', gefs_raw: 'NOAA GEFS 0.5°(自建管道)',
+  ecmwf_raw: 'ECMWF IFS 0.25°(自建管道)', aifs_raw: 'ECMWF AIFS 0.25°(自建管道)',
+  best_match: 'Open-Meteo 最佳匹配', gfs_seamless: 'Open-Meteo GFS',
+  icon_seamless: 'Open-Meteo ICON', ecmwf_ifs025: 'Open-Meteo ECMWF',
+};
 let degUnit = 'c';
 export function setDegUnit(u) { degUnit = u; }
 export const toDeg = (c) => (degUnit === 'f' ? c * 9 / 5 + 32 : c);
@@ -87,7 +96,9 @@ export class ForecastPanel {
 
   async _load() {
     try {
-      const data = await fetchPoint(this.lat, this.lon, this.getModel());
+      const m = POINT_BASE[this.getModel()] || this.getModel();
+      this.dataModel = m;
+      const data = await fetchPoint(this.lat, this.lon, m);
       this.data = data;
       this._render();
     } catch (e) {
@@ -101,8 +112,6 @@ export class ForecastPanel {
   _render() {
     const d = this.data;
     const cur = d.current;
-    /* 海浪模式:无大气点位要素,走海洋专用视图 */
-    if (cur.temperature_2m == null || Number.isNaN(cur.temperature_2m)) return this._renderMarine(d);
     const [desc, icon] = wmo(cur.weather_code);
     this.title.textContent = `${desc} · ${Math.round(toDeg(cur.temperature_2m))}°`;
     if (Number.isFinite(d.elevation)) {
@@ -143,7 +152,7 @@ export class ForecastPanel {
       </div>
       <div id="ptab-body"></div>
       <div class="psun">🌅 ${fmtHourLocal(Date.parse(d.daily.sunrise[0]))} 日出 · 🌇 ${fmtHourLocal(Date.parse(d.daily.sunset[0]))} 日落(当地)</div>
-      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">数据源:${modelLabel(d)},插值到该点坐标${staleNote}</div>
+      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">数据源:${modelLabel(d, this.dataModel)},插值到该点坐标${staleNote}</div>
     `;
 
     this.content.querySelectorAll('.ptabs button').forEach((b) => {
@@ -155,41 +164,6 @@ export class ForecastPanel {
     });
     this.loading.style.display = 'none';
     this.content.hidden = false;
-    this._renderTab();
-  }
-
-  /* 海浪模式的点位面板:当前波况 + Open-Meteo 海浪详情 */
-  _renderMarine(d) {
-    const cur = d.current || {};
-    const num = (v) => Number.isFinite(v) && v != null;
-    const wh = num(cur.wave_height) ? cur.wave_height : NaN;
-    const wp = num(cur.wave_period) ? cur.wave_period : NaN;
-    const wd = num(cur.wave_direction) ? cur.wave_direction : NaN;
-    this.title.textContent = `海浪 · ${num(wh) ? wh.toFixed(1) + ' m' : '—'}`;
-    this.content.innerHTML = `
-      <div class="pcur">
-        <div class="pcur-icon">🌊</div>
-        <div>
-          <div class="pcur-temp">${num(wh) ? wh.toFixed(1) : '—'}<sup>m</sup></div>
-          <div class="pcur-desc">有效波高${num(wp) ? ` · 主波周期 ${wp.toFixed(1)} s` : ''}${num(wd) ? ` · ${compass(wd)}来向` : ''}</div>
-        </div>
-      </div>
-      <div class="pgrid">
-        <div class="pstat"><b>${num(wh) ? wh.toFixed(1) + ' m' : '—'}</b><span>波高</span></div>
-        <div class="pstat"><b>${num(wp) ? wp.toFixed(1) + ' s' : '—'}</b><span>主波周期</span></div>
-        <div class="pstat"><b>${num(wd) ? Math.round(wd) + '°' : '—'}</b><span>主波来向</span></div>
-      </div>
-      <div style="font-size:11.5px;color:var(--text-dim);margin:6px 0 10px;text-align:center">海浪模式无大气点位要素 · 下方为该点海浪详情</div>
-      <div class="ptabs"><button data-tab="wave" class="active">海浪详情</button></div>
-      <div id="ptab-body"></div>
-      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">数据源:${modelLabel(d)},格点插值到该点坐标</div>
-    `;
-    this.content.querySelectorAll('.ptabs button').forEach((b) => {
-      b.addEventListener('click', () => this._renderTab());
-    });
-    this.loading.style.display = 'none';
-    this.content.hidden = false;
-    this.tab = 'wave';
     this._renderTab();
   }
 
@@ -979,8 +953,10 @@ function compass(deg) {
   const dirs = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
   return dirs[Math.round(((deg % 360) / 45)) % 8] + '风';
 }
-function modelLabel(d) {
-  // Open-Meteo 未直接返回模型名,按请求参数推断由前端展示
+function modelLabel(d, pointModel) {
+  // 点位数据固定来自大气模式(专用模式已回落),按实际请求参数展示;
+  // 对比标签页等未传 pointModel 的调用沿用当前模式标注
+  if (pointModel && POINT_MODEL_LABELS[pointModel]) return POINT_MODEL_LABELS[pointModel];
   return window.__currentModelLabel || 'Open-Meteo 模式数据';
 }
 
