@@ -3,10 +3,12 @@
  *
  * 数据:gfs.YYYYMMDD/HH/wave/gridded/gfswave.tHHz.global.0p25.fXXX.grib2
  *   HTSGW 有效波高(m)/ PERPW 主波周期(s)/ DIRPW 主波方向(度,来向)
+ *   WVHGT 风浪高(m)/ WVPER 风浪周期(s)
+ *   SWELL/SWPER 涌浪高/周期 — idx level 为 "N in sequence"(第 N 分区),取第 1 分区为主涌浪
  *   DRT 5.40(JPEG2000):由 grib2.js 调 python3+Pillow 解码(见 server/j2k.py)
  *
- * 存储:0.5° 全球网格 Int16 捆包(wvh/wvp/wvd),u/v 传播矢量在 rawGrid 输出时
- *   由波高+方向现场合成(粒子动画用),不落盘。
+ * 存储:0.5° 全球网格 Int16 捆包(wvh/wvp/wvd/swvh/swvp/wwh/wwp),u/v 传播矢量与
+ *   wve 波浪能量在 rawGrid 输出时现场派生,不落盘。
  */
 'use strict';
 
@@ -27,10 +29,16 @@ const VARCFG = {
   wvh: { grib: 'HTSGW', level: 'surface', scale: 100, conv: (v) => v },
   wvp: { grib: 'PERPW', level: 'surface', scale: 100, conv: (v) => v },
   wvd: { grib: 'DIRPW', level: 'surface', scale: 10, conv: (v) => v },
+  wwh: { grib: 'WVHGT', level: 'surface', scale: 100, conv: (v) => v },
+  wwp: { grib: 'WVPER', level: 'surface', scale: 100, conv: (v) => v },
+  swvh: { grib: 'SWELL', level: '1 in sequence', scale: 100, conv: (v) => v },
+  swvp: { grib: 'SWPER', level: '1 in sequence', scale: 100, conv: (v) => v },
   u: { scale: 100, derived: true },
   v: { scale: 100, derived: true },
+  /* 波浪能量通量 kW/m ≈ (ρg²/64π)·Hs²·Te ≈ 0.49·Hs²·Te */
+  wve: { scale: 10, derived: true },
 };
-const VARKEYS = ['wvh', 'wvp', 'wvd'];
+const VARKEYS = ['wvh', 'wvp', 'wvd', 'wwh', 'wwp', 'swvh', 'swvp'];
 
 const WAVES = {
   id: 'waves_raw',
@@ -148,7 +156,8 @@ class WavesEngine extends ModelEngine {
   }
 
   /* 波高+主波方向 → 海浪传播矢量(东向 u / 北向 v,m/s)。
-   * DIRPW 为来向(气象约定),传播去向 = +180;速度按波高视觉化标定。 */
+   * DIRPW 为来向(气象约定),传播去向 = +180;速度按波高视觉化标定。
+   * 波浪能量 wve = 0.49·Hs²·Te(kW/m),无波高或周期处为 NaN。 */
   async rawGrid(w, s, e, n, stepDeg) {
     const out = await super.rawGrid(w, s, e, n, stepDeg);
     const f32of = (b64) => {
@@ -157,17 +166,21 @@ class WavesEngine extends ModelEngine {
     };
     const h = f32of(out.vars.wvh);
     const d = f32of(out.vars.wvd);
+    const p = f32of(out.vars.wvp);
     const u = new Float32Array(h.length);
     const v = new Float32Array(h.length);
+    const wve = new Float32Array(h.length);
     for (let i = 0; i < h.length; i++) {
       if (Number.isNaN(h[i]) || Number.isNaN(d[i])) { u[i] = NaN; v[i] = NaN; continue; }
       const spd = Math.min(10, 0.8 * h[i] + 0.5);
       const to = (d[i] + 180) * Math.PI / 180;
       u[i] = spd * Math.sin(to);
       v[i] = spd * Math.cos(to);
+      wve[i] = Number.isNaN(p[i]) ? NaN : 0.49 * h[i] * h[i] * p[i];
     }
     out.vars.u = Buffer.from(u.buffer, u.byteOffset, u.byteLength).toString('base64');
     out.vars.v = Buffer.from(v.buffer, v.byteOffset, v.byteLength).toString('base64');
+    out.vars.wve = Buffer.from(wve.buffer, wve.byteOffset, wve.byteLength).toString('base64');
     return out;
   }
 }

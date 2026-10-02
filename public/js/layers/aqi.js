@@ -99,7 +99,7 @@ export class AqiLayer {
     const d = aqiDesc(a);
     const pick = (arr) => (arr ? arr[nowH] : null);
     const f = (v, unit, rd = 1) => (Number.isFinite(v) ? `${(+v).toFixed(rd)}${unit}` : '—');
-    const FIELDS = { a: ['US AQI', ''], p: ['PM2.5', ' μg/m³'], p10: ['PM10', ' μg/m³'], o3: ['O₃', ' μg/m³'], no2: ['NO₂', ' μg/m³'], so2: ['SO₂', ' μg/m³'] };
+    const FIELDS = { a: ['US AQI', ''], p: ['PM2.5', ' μg/m³'], p10: ['PM10', ' μg/m³'], o3: ['O₃', ' μg/m³'], no2: ['NO₂', ' μg/m³'], so2: ['SO₂', ' μg/m³'], u: ['UV 指数', ''] };
     const [flabel, funit] = FIELDS[this.field] || FIELDS.a;
     const gen = this.data && this.data.generated ? new Date(this.data.generated * 1000) : null;
     return `<div class="tc-popup">

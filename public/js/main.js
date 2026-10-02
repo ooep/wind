@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2 } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -51,11 +51,18 @@ const ICONS = {
   cin: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M13 2 5 13h5l-1.5 9L19 10h-5l1-8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" opacity="0.45"/><path d="M4 21.5h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   wvh: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 16c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2.5 20c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/><path d="M12 3.5c2 1.6 3.2 3.2 3.2 4.9A3.2 3.2 0 0 1 12 11.6a3.2 3.2 0 0 1-3.2-3.2c0-1.7 1.2-3.3 3.2-4.9z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
   wvp: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5V12l3.2 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7 19.5c2-1.6 4-1.6 6 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>',
+  swvh: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 10.5c3-2.8 6-2.8 9.5 0s6.5 2.8 9.5 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2.5 16.5c3-2.8 6-2.8 9.5 0s6.5 2.8 9.5 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.65"/></svg>',
+  swvp: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="10.5" r="7.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 6V10.5l3 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M3.5 20.5c2.8-2 5.7-2 8.5 0s5.7 2 8.5 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/></svg>',
+  wwh: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 11.5c1.6-2.6 3.2-2.6 4.8 0s3.2 2.6 4.8 0 3.2-2.6 4.8 0 3.2 2.6 4.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M2.5 17c1.6-2.6 3.2-2.6 4.8 0s3.2 2.6 4.8 0 3.2-2.6 4.8 0 3.2 2.6 4.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.6"/></svg>',
+  wwp: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5V12l2.8 1.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M6.5 18.5c1.5-1.8 3-1.8 4.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.65"/></svg>',
+  wve: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 18c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M13.5 2.5 7.5 10.5h3.6L9.5 17l6.8-8.5h-3.7l1.6-6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   aqi: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3.5 9c3.2-1.6 6.3-1.6 9.4 0 2.4 1.2 4.6 1.3 6.6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3.5 13.5c3.2-1.6 6.3-1.6 9.4 0 2.4 1.2 4.6 1.3 6.6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3.5 18c3.2-1.6 6.3-1.6 9.4 0 2.4 1.2 4.6 1.3 6.6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/></svg>',
   wetbulb: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 4a2 2 0 1 1 4 0v9.3a4.5 4.5 0 1 1-4 0z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.6 13.2s2.2 2.5 2.2 4a2.2 2.2 0 0 1-4.4 0c0-1.5 2.2-4 2.2-4z" fill="currentColor"/></svg>',
   sst: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 16.5c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 3.5c2.3 1.9 3.7 3.7 3.7 5.6a3.7 3.7 0 0 1-7.4 0c0-1.9 1.4-3.7 3.7-5.6z" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
   barbs: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 18L18 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M18 6l-5 1.2M18 6l-1.2 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   pm25: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="8.5" cy="9" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="15.5" cy="14.5" r="4.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="7" cy="17" r="1.8" fill="currentColor"/></svg>',
+  pm10: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="8" cy="8.5" r="3.8" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="15.5" cy="15" r="5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6.5" cy="17.8" r="1.7" fill="currentColor"/><circle cx="18" cy="6.8" r="1.4" fill="currentColor"/></svg>',
+  uv: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.8M12 18.7v2.8M2.5 12h2.8M18.7 12h2.8M5.2 5.2l2 2M16.8 16.8l2 2M18.8 5.2l-2 2M7.2 16.8l-2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   no2: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="9" cy="9.5" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="15" cy="15" r="4.6" fill="none" stroke="currentColor" stroke-width="1.7" opacity="0.65"/></svg>',
   o3: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
   so2: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="8" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.7"/><circle cx="11" cy="16" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.85"/></svg>',
@@ -90,12 +97,19 @@ const LAYERS = [
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
   { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
   { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
+  { id: 'swvh', label: '涌浪高度', unit: 'm', cmap: WAVES, variable: 'swvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
+  { id: 'swvp', label: '涌浪周期', unit: 's', cmap: WPER, variable: 'swvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
+  { id: 'wwh', label: '风浪高度', unit: 'm', cmap: WAVES, variable: 'wwh', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
+  { id: 'wwp', label: '风浪周期', unit: 's', cmap: WPER, variable: 'wwp', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
+  { id: 'wve', label: '波浪能量', unit: 'kW/m', cmap: WENERGY, variable: 'wve', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))), models: ['waves_raw'] },
   { id: 'sst', label: '海温', unit: '°C', cat: 'temp', cmap: SST, variable: 'sst', fmt: (v) => { const c = convV('temp', v); return Math.abs(c) < 1 ? c.toFixed(1) : String(Math.round(c)); }, models: ['ocean_raw'] },
   { id: 'aqi', label: '空气质量', unit: 'AQI', cmap: AQI, special: 'aqi', aqField: 'a', fmt: (v) => Math.round(v) },
   { id: 'pm25', label: 'PM2.5', unit: 'μg/m³', cmap: PM25, special: 'aqi', aqField: 'p', fmt: (v) => Math.round(v) },
+  { id: 'pm10', label: 'PM10', unit: 'μg/m³', cmap: PM25, special: 'aqi', aqField: 'p10', fmt: (v) => Math.round(v) },
   { id: 'no2', label: '二氧化氮', unit: 'μg/m³', cmap: NO2, special: 'aqi', aqField: 'no2', fmt: (v) => Math.round(v) },
   { id: 'o3', label: '臭氧', unit: 'μg/m³', cmap: O3, special: 'aqi', aqField: 'o3', fmt: (v) => Math.round(v) },
   { id: 'so2', label: '二氧化硫', unit: 'μg/m³', cmap: SO2, special: 'aqi', aqField: 'so2', fmt: (v) => Math.round(v) },
+  { id: 'uv', label: 'UV 指数', unit: '', cmap: UVI, special: 'aqi', aqField: 'u', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))) },
 ];
 
 /* 分组(手风琴):图层按钮按组分节收纳,对齐 Windy 的导航结构 */
@@ -107,8 +121,8 @@ const GROUPS = [
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
   { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
-  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'sst'] },
-  { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'no2', 'o3', 'so2'] },
+  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst'] },
+  { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
 ];
 
 /* 当前图层渲染所需的原始变量(派生图层映射到其数据来源) */
@@ -125,6 +139,8 @@ const layerById = (id) => LAYERS.find((l) => l.id === id);
 /* 当前图层+气压层所需的变量键:层级>0 时给 u/v/temp/rh 加后缀(静态包按层懒加载) */
 function needsFor(def) {
   const base = [...new Set(['u', 'v', ...varNeeds(def)])];
+  /* 海浪模式:粒子着色取波高,任意波浪图层都需 wvh 就绪 */
+  if (state.model === 'waves_raw' && !base.includes('wvh')) base.push('wvh');
   if (!state.level) return base;
   return base.map((vk) => ['u', 'v', 'temp', 'rh'].includes(vk) ? `${vk}@${state.level}` : vk);
 }

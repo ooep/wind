@@ -176,7 +176,7 @@
       <tr><th>气象模式数据</th><td><b>自建管道(默认),三套模式可切换:</b><br>
         ① <b>NOAA GFS</b> 0.5°(主引擎)② <b>NOAA GEFS</b> 控制成员 0.5°(集合预报)③ <b>ECMWF IFS</b> 0.25°(欧洲中期天气预报中心,全球参考模式)。<br>
         全部直接获取官方原始 GRIB2(GFS/GEFS 来自 <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">AWS 开放数据</a>,ECMWF 来自 <a href="https://confluence.ecmwf.int/display/DAC/ECMWF+open+data" target="_blank" rel="noopener">ECMWF Open Data</a>,均无 key 无配额),自研解码器解析、单位换算、格点采样与点预报在本服务内完成。GFS/GEFS 时间窗为过去 24h ~ 未来 7 天;ECMWF 因发布延迟约 6~8 小时。预报存在模式误差,请以官方气象部门发布为准。另含 <b>NOAA GFS Wave</b> 海浪专用模式(「海洋」分组)。</td></tr>
-      <tr><th>海浪模式</th><td><b>NOAA GFS Wave</b> 全球 0.25°(与大气 GFS 同源 AWS 开放数据,public domain)— 有效波高 / 主波周期 / 主波方向,原始 GRIB2(JPEG2000 压缩)自解码,粒子按波高着色传播方向推进;时间窗过去 24h ~ 未来 7.5 天,0-120h 逐小时。</td></tr>
+      <tr><th>海浪模式</th><td><b>NOAA GFS Wave</b> 全球 0.25°(与大气 GFS 同源 AWS 开放数据,public domain)— 有效波高 / 主波周期 / 主波方向 / 涌浪高度与周期 / 风浪高度与周期 / 波浪能量(kW/m,按 0.49·H²·T 计算),原始 GRIB2(JPEG2000 压缩)自解码,粒子按波高着色传播方向推进;时间窗过去 24h ~ 未来 7.5 天,0-120h 逐小时。</td></tr>
       <tr><th>空气质量图层</th><td>Open-Meteo Air Quality(CAMS 全球)— 全球主要城市 US AQI / PM2.5 / PM10 / O₃ / NO₂ / SO₂ / UV 逐小时预报,定时烘焙后随站点分发。</td></tr>
       <tr><th>降水雷达</th><td><a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> — 汇聚各国气象局雷达站观测,约 10 分钟更新;含未来 30 分钟外推。</td></tr>
       <tr><th>实时闪电</th><td><a href="https://blitzortung.org/" target="_blank" rel="noopener">Blitzortung.org</a> — 社区雷电探测网络(全球数千 volunteer 探测站),WebSocket 实时推送,展示最近 90 分钟落雷,颜色越亮越新。</td></tr>
