@@ -183,11 +183,18 @@ const GEFS = {
     const cfg = GEFS_VARS[varKey];
     const rec = recs.find((x) => x.var === cfg.grib && x.level === cfg.level && (cfg.ave ? /ave/.test(x.ts) : cfg.acc ? /acc/.test(x.ts) : !/ave|acc/.test(x.ts)));
     if (!rec) throw new Error(`idx 中未找到 ${varKey}`);
+    let conv = cfg.conv;
+    if (varKey === 'precip') {
+      // APCP 累积窗口随步长变化(如 f021 为 18-21 3h,f024 为 18-24 6h),固定 /3 在 6h 窗口帧会高估 2 倍
+      const wm = /(\d+)-(\d+) hour acc/.exec(rec.ts);
+      const win = wm ? Math.max(1, Number(wm[2]) - Number(wm[1])) : 3;
+      conv = (v) => v / win;
+    }
     const data = await fetchBuf(url, 5, { Range: `bytes=${rec.start}-${rec.end - 1}` });
     const total = Number(data.readBigUInt64BE(8));
     const m = findMessages(total <= data.length ? data : data.subarray(0, total))[0];
     const dec = decodeMessage(m);
-    return normalizeGrid(dec, this.grid, cfg);
+    return normalizeGrid(dec, this.grid, { ...cfg, conv });
   },
   gridOf() { return this.grid; },
 };
@@ -199,7 +206,7 @@ const GEFS_VARS = {
   temp: { grib: 'TMP', level: '2 m above ground', scale: 100, conv: (v) => v - 273.15 },
   rh: { grib: 'RH', level: '2 m above ground', scale: 100, conv: (v) => v },
   msl: { grib: 'PRMSL', level: 'mean sea level', scale: 10, conv: (v) => v / 100 },
-  precip: { grib: 'APCP', level: 'surface', scale: 100, conv: (v) => v / 3, acc: true }, // APCP 单位 kg/m² ≡ mm,3h 累积 → mm/h
+  precip: { grib: 'APCP', level: 'surface', scale: 100, conv: (v) => v, acc: true }, // 累积窗口不固定(3h/6h 交替),fetchVarStep 按 idx 时间窗动态换算 mm/h
   cloud: { grib: 'TCDC', level: 'entire atmosphere', scale: 100, conv: (v) => v, ave: true },
   gust: { grib: 'GUST', level: 'surface', scale: 100, conv: (v) => v },
 };
