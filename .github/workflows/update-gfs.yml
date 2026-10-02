@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: data-gfs_raw
@@ -56,9 +57,15 @@ jobs:
           find dist/data -mindepth 2 -maxdepth 2 -type d -name '20*' -mtime +2 -exec rm -rf {} + 2>/dev/null || true
           node tools/build-static.js --out dist/data --index-only
           git add -A -f dist/data
-          git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
+          if git diff --cached --quiet; then echo "数据无变更,跳过发布"; exit 0; fi
+          git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')"
           for i in 1 2 3 4 5; do
-            if git push origin main; then exit 0; fi
+            if git push origin main; then
+              # GITHUB_TOKEN 的 push 事件不会触发其他 workflow,显式触发静态部署
+              gh workflow run deploy-pages.yml --ref main
+              exit 0
+            fi
             sleep 20
             git pull --rebase origin main || true
           done
+          git push origin main && gh workflow run deploy-pages.yml --ref main
