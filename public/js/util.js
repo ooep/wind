@@ -1,4 +1,5 @@
 /* 工具:Web 墨卡托投影(与 Leaflet 一致)、格点数据访问器、通用 helpers */
+import { inLakeBox } from './lakemasks.js';
 
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -62,6 +63,7 @@ export class Grid {
     this.times = d.times.map((t) => Date.parse(t + ':00Z'));
     this.nT = this.times.length;
     this.P = d.cols * d.rows;
+    this._buildLakeBarriers();
     this.vars = {};
     for (const k of Object.keys(d.vars)) this.vars[k] = b64ToF32(d.vars[k]);
   }
@@ -110,6 +112,21 @@ export class Grid {
   /* 海洋图层专用:NaN 格点用最近有效格值外推(多源 BFS,4 邻接含经度环绕)。
    * 陆地随后由高精度多边形画布遮盖,外推只负责把填色平滑延续到海岸线,
    * 消除粗网格海岸处的锯齿空穴。按 变量:帧 懒加载缓存。 */
+  /* 湖盆壁垒:外推禁止填入大湖(里海/贝加尔等),否则内陆湖会出现海洋颜色 */
+  _buildLakeBarriers() {
+    this._barrier = null;
+    if (!this.lons || !this.lats) return;
+    const C = this.cols, R = this.rows;
+    const bar = new Uint8Array(C * R);
+    let any = 0;
+    for (let j = 0; j < R; j++) {
+      for (let i = 0; i < C; i++) {
+        if (inLakeBox(this.lons[i], this.lats[j])) { bar[j * C + i] = 1; any = 1; }
+      }
+    }
+    this._barrier = any ? bar : null;
+  }
+
   extendedVar(varName, fi) {
     this._ext = this._ext || {};
     const key = varName + ':' + fi;
@@ -122,9 +139,11 @@ export class Grid {
     const q = new Int32Array(P);
     let qh = 0, qt = 0;
     const off = fi * P;
+    const barrier = this._barrier;
     for (let i = 0; i < P; i++) {
       const v = src[off + i];
       if (!Number.isNaN(v)) { out[i] = v; dist[i] = 0; q[qt++] = i; }
+      else if (barrier && barrier[i]) out[i] = NaN; // 壁垒格保持 NaN(初始化为 0 会被当有效值)
     }
     if (qt === 0) return null; // 整帧无有效值(如视口全为陆地)→ 调用方按 NaN 处理
     while (qh < qt) {
@@ -136,7 +155,7 @@ export class Grid {
         else if (k === 1) { if (row === R - 1) continue; j = i + C; }
         else if (k === 2) j = row * C + (col + C - 1) % C;
         else j = row * C + (col + 1) % C;
-        if (dist[j] === -1) { dist[j] = dist[i] + 1; out[j] = out[i]; q[qt++] = j; }
+        if (dist[j] === -1 && !barrier[j]) { dist[j] = dist[i] + 1; out[j] = out[i]; q[qt++] = j; }
       }
     }
     this._ext[key] = out;

@@ -4,6 +4,7 @@
  * 海洋色块紧贴大陆线,消除粗网格海岸处的锯齿空穴(对齐 Windy 的做法)。 */
 import { getView } from '../util.js';
 import { loadLand } from '../basemap.js?v=2';
+import { LAKE_BOXES } from '../lakemasks.js';
 
 const BLOCK = 3; // 屏幕采样块大小(css px)
 
@@ -158,6 +159,13 @@ export class ScalarLayer {
       }
       ctx.closePath();
       ctx.fill();
+    }
+    // 大湖(里海等):陆地多边形的洞,遮罩盖不到,显式按陆地填掉
+    for (const b of LAKE_BOXES) {
+      if (b.lon1 < minLon - 1 || b.lon0 > maxLon + 1 || b.lat1 < minLat - 1 || b.lat0 > maxLat + 1) continue;
+      const p0 = view.latLngToContainer(b.lat1, b.lon0);
+      const p1 = view.latLngToContainer(b.lat0, b.lon1);
+      ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
     }
   }
 }

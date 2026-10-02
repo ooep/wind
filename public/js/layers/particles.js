@@ -4,6 +4,7 @@
 import { getView } from '../util.js';
 import { WIND } from '../colormaps.js';
 import { loadLand } from '../basemap.js?v=2';
+import { LAKE_BOXES } from '../lakemasks.js';
 
 const MAX_SPEED_PX = 5.5;   // 单帧位移上限(px),防止视觉过快
 const BASE_K = 0.055;        // z=2 时的 px/(m/s·帧) 系数
@@ -77,6 +78,13 @@ export class ParticleLayer {
       }
       ctx.closePath();
       ctx.fill();
+    }
+    // 大湖按陆地处理:粒子不进入湖盆
+    for (const b of LAKE_BOXES) {
+      if (b.lon1 < minLon - 1 || b.lon0 > maxLon + 1 || b.lat1 < minLat - 1 || b.lat0 > maxLat + 1) continue;
+      const p0 = view.latLngToContainer(b.lat1, b.lon0);
+      const p1 = view.latLngToContainer(b.lat0, b.lon1);
+      ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
     }
     const img = ctx.getImageData(0, 0, W, H);
     this.landBits = img.data;
