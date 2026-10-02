@@ -49,7 +49,7 @@ const WAVES = {
   async fetchVarStep(runKey, step, varKey) {
     const hh = runKey.split('/')[1];
     const fileTag = `f${String(step).padStart(3, '0')}`;
-    const url = `${S3}/gfs.${runKey}/wave/gridded/gfswave.t${hh}z.global.0p25.${fileTag}`;
+    const url = `${S3}/gfs.${runKey}/wave/gridded/gfswave.t${hh}z.global.0p25.${fileTag}.grib2`;
     let idxBuf;
     try {
       idxBuf = await fetchBuf(`${url}.idx`, 4);
