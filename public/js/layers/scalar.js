@@ -3,7 +3,7 @@
  * 再以独立画布把 land-50m 陆地多边形盖在填色之上 —— 陆地干净遮除、
  * 海洋色块紧贴大陆线,消除粗网格海岸处的锯齿空穴(对齐 Windy 的做法)。 */
 import { getView } from '../util.js';
-import { loadLand } from '../basemap.js?v=2';
+import { loadLand, traceRing } from '../basemap.js?v=2';
 import { LAKE_BOXES } from '../lakemasks.js';
 
 const BLOCK = 3; // 屏幕采样块大小(css px)
@@ -151,13 +151,7 @@ export class ScalarLayer {
       const [rLon0, rLat0, rLon1, rLat1] = ring.b;
       if (rLon1 < minLon - 1 || rLon0 > maxLon + 1 || rLat1 < minLat - 1 || rLat0 > maxLat + 1) continue;
       ctx.beginPath();
-      const r = ring.r;
-      for (let i = 0; i < r.length; i += 2) {
-        const pt = view.latLngToContainer(r[i + 1], r[i]);
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.closePath();
+      traceRing(ctx, ring, view);
       ctx.fill();
     }
     // 大湖(里海等):陆地多边形的洞,遮罩盖不到,显式按陆地填掉

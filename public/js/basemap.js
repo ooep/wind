@@ -190,6 +190,29 @@ export class VectorBasemap {
 /* 陆地填充(深色底图):烘焙的 land-50m 多边形(0.83MB 本地文件,无外部瓦片依赖)。
  * canvas 位于 overlay-root z=0 —— 气象填色层之下、地图瓦片之上;卫星/地形模式下隐藏。 */
 let landPromise = null;
+
+/* 环路径(经度解缠绕 + 三份世界副本):楚科奇等陆地横跨 ±180°,原始经度直接绘制
+ * 会产生横穿整幅地图的"跳变边",nonzero 填充在两条跳变边之间绕数归零,
+ * 挖出一条横贯大陆的洞 —— 解缠绕后沿同一世界副本连续投影,并按 ±360° 补画副本。 */
+export function traceRing(ctx, ring, view) {
+  const r = ring.r;
+  let lastRaw = null, off = 0;
+  for (let copy = -360; copy <= 360; copy += 360) {
+    lastRaw = null; off = copy;
+    for (let i = 0; i < r.length; i += 2) {
+      const raw = r[i];
+      if (lastRaw !== null) {
+        if (raw - lastRaw > 180) off -= 360;
+        else if (raw - lastRaw < -180) off += 360;
+      }
+      lastRaw = raw;
+      const pt = view.latLngToContainer(r[i + 1], raw + off);
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.closePath();
+  }
+}
 export function loadLand() {
   if (!landPromise) {
     landPromise = fetch(new URL('../geo/land-50m.json', import.meta.url))
@@ -254,13 +277,7 @@ export class LandFill {
       const [rLon0, rLat0, rLon1, rLat1] = ring.b;
       if (rLon1 < minLon - 1 || rLon0 > maxLon + 1 || rLat1 < minLat - 1 || rLat0 > maxLat + 1) continue;
       ctx.beginPath();
-      const r = ring.r;
-      for (let i = 0; i < r.length; i += 2) {
-        const pt = view.latLngToContainer(r[i + 1], r[i]);
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.closePath();
+      traceRing(ctx, ring, view);
       ctx.fill();
       ctx.stroke();
     }

@@ -3,7 +3,7 @@
  * 粒子游到岸线以内立即重生 —— 岸外全流动、岸内零粒子。 */
 import { getView } from '../util.js';
 import { WIND } from '../colormaps.js';
-import { loadLand } from '../basemap.js?v=2';
+import { loadLand, traceRing } from '../basemap.js?v=2';
 import { LAKE_BOXES } from '../lakemasks.js';
 
 const MAX_SPEED_PX = 5.5;   // 单帧位移上限(px),防止视觉过快
@@ -70,13 +70,7 @@ export class ParticleLayer {
       const [rLon0, rLat0, rLon1, rLat1] = ring.b;
       if (rLon1 < minLon - 1 || rLon0 > maxLon + 1 || rLat1 < minLat - 1 || rLat0 > maxLat + 1) continue;
       ctx.beginPath();
-      const r = ring.r;
-      for (let i = 0; i < r.length; i += 2) {
-        const pt = view.latLngToContainer(r[i + 1], r[i]);
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.closePath();
+      traceRing(ctx, ring, view);
       ctx.fill();
     }
     // 大湖按陆地处理:粒子不进入湖盆
