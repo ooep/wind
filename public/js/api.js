@@ -294,13 +294,20 @@ async function staticPoint(lat, lon, model, needs) {
 }
 
 /* 静态模式可用模式列表(供模型选择器过滤) */
+let staticAvailCache = null;
 export async function staticAvailableModels() {
   await resolveMode(); // 启动竞态:调用早于模式探测完成时 staticMode 尚为 false
   if (!staticMode) return null;
   try {
     const index = await staticIndexGet();
-    return Object.keys(index.models || {});
+    staticAvailCache = Object.keys(index.models || {});
+    return staticAvailCache;
   } catch { return null; }
+}
+
+/* 同步查询:某模式是否已有静态数据(供图层自动切换做优雅降级决策) */
+export function staticHasModel(m) {
+  return !!staticAvailCache && staticAvailCache.includes(m);
 }
 
 /* 海浪模式点位:波高/周期/方向系列,大气要素为 null(面板走海洋视图) */
