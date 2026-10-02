@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, gphCmap } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, gphCmap } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel, staticAvailReady, isStatic } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -10,6 +10,8 @@ import { AqiLayer } from './layers/aqi.js';
 import { BarbLayer } from './layers/barbs.js';
 import { GlobeView } from './globe.js';
 import { SatelliteLayer } from './layers/satellite.js';
+import { GibsLayer } from './layers/gibs.js';
+import { FiresLayer } from './layers/fires.js';
 import { SnowCoverLayer } from './layers/snowcover.js';
 import { LightningLayer } from './layers/lightning.js';
 import { AuroraLayer } from './layers/aurora.js';
@@ -88,6 +90,18 @@ const ICONS = {
   so2: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="8" cy="8.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.7"/><circle cx="11" cy="16" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.85"/></svg>',
 };
 
+/* 卫星观测图层图标:复用语义相近的既有图标 + 两个新增(植被/叶绿素) */
+ICONS.imerg = ICONS.precip;
+ICONS.lst = ICONS.soilt;
+ICONS.smap = ICONS.soilw;
+ICONS.frozen = ICONS.frzlvl;
+ICONS.aerosol = ICONS.dust;
+ICONS.seaice = ICONS.snow;
+ICONS.vapor = ICONS.humidity;
+ICONS.fires = ICONS.fire;
+ICONS.ndvi = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M18.5 4.5C11 5 5.5 9.5 5.5 16c0 1.2.3 2.3.8 3.2C7.5 13 12 8.5 17.5 6.5c-4.5 3-8 7.5-9.3 13 .9.4 1.9.6 3 .6 6 0 9.3-5.5 7.3-15.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+ICONS.chl = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 15c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="6.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="10.5" r="0.9" fill="currentColor"/><circle cx="18.5" cy="9.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+
 const LAYERS = [
   { id: 'wind', label: '风场', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'wind', fmt: (v) => String(Math.round(convV('wind', v))) },
   { id: 'gust', label: '阵风', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'gust', fmt: (v) => String(Math.round(convV('wind', v))), models: ['gfs_raw'] },
@@ -147,11 +161,41 @@ const LAYERS = [
   { id: 'o3', label: '臭氧', unit: 'μg/m³', cmap: O3, special: 'aqi', aqField: 'o3', fmt: (v) => Math.round(v) },
   { id: 'so2', label: '二氧化硫', unit: 'μg/m³', cmap: SO2, special: 'aqi', aqField: 'so2', fmt: (v) => Math.round(v) },
   { id: 'uv', label: 'UV 指数', unit: '', cmap: UVI, special: 'aqi', aqField: 'u', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))) },
+  /* NASA GIBS 卫星观测(零注册直连瓦片,官方预渲染配色) */
+  { id: 'fires', label: '活跃火点', unit: '', special: 'fires', cmap: FIRECONF, fmt: (v) => ['低', '中', '高'][Math.round(v)] || '' },
+  { id: 'imerg', label: '卫星降水', unit: 'mm/h', cat: 'precip', cmap: IMERRG, special: 'gibs',
+    gibs: { gibs: 'IMERG_Precipitation_Rate_30min', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'min30', attr: 'NASA GPM IMERG / GIBS' },
+    fmt: (v) => (v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : String(Math.round(v))) },
+  { id: 'lst', label: '地表温度', unit: '°C', cat: 'temp', cmap: GLST, special: 'gibs',
+    gibs: { gibs: 'MODIS_Terra_Land_Surface_Temp_Day', tms: 'GoogleMapsCompatible_Level7', zoom: 7, cadence: 'daily', lag: 1, attr: 'NASA MODIS Terra / GIBS' },
+    fmt: (v) => String(Math.round(convV('temp', v))) },
+  { id: 'smap', label: '卫星土壤湿', unit: '%', cmap: GSMAP, special: 'gibs',
+    gibs: { gibs: 'SMAP_L4_Analyzed_Surface_Soil_Moisture', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'daily', lag: 4, attr: 'NASA SMAP L4 / GIBS' },
+    fmt: (v) => String(Math.round(v * 100)) },
+  { id: 'frozen', label: '冻土', unit: '%', cmap: GFROZEN, special: 'gibs',
+    gibs: { gibs: 'SMAP_L4_Frozen_Area', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'daily', lag: 10, attr: 'NASA SMAP L4 / GIBS' },
+    fmt: (v) => String(Math.round(v)) },
+  { id: 'ndvi', label: '植被指数', unit: 'NDVI', cmap: GNDVI, special: 'gibs',
+    gibs: { gibs: 'MODIS_Terra_NDVI_8Day', tms: 'GoogleMapsCompatible_Level9', zoom: 9, cadence: 'days8', lag: 2, attr: 'NASA MODIS Terra / GIBS' },
+    fmt: (v) => v.toFixed(2) },
+  { id: 'aerosol', label: '气溶胶指数', unit: '', cmap: GAOD, special: 'gibs',
+    gibs: { gibs: 'OMI_Aerosol_Index', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'daily', lag: 1, attr: 'NASA OMI / Aura / GIBS' },
+    fmt: (v) => v.toFixed(1) },
+  { id: 'chl', label: '叶绿素', unit: 'mg/m³', cmap: GCHL, special: 'gibs', maskLand: true,
+    gibs: { gibs: 'MODIS_Aqua_L2_Chlorophyll_A', tms: 'GoogleMapsCompatible_Level7', zoom: 7, cadence: 'daily', lag: 1, attr: 'NASA MODIS Aqua / GIBS' },
+    fmt: (v) => (v < 1 ? v.toFixed(2) : v.toFixed(1)) },
+  { id: 'seaice', label: '海冰浓度', unit: '%', cmap: GICE, special: 'gibs', maskLand: true,
+    gibs: { gibs: 'GHRSST_L4_MUR_Sea_Ice_Concentration', tms: 'GoogleMapsCompatible_Level7', zoom: 7, cadence: 'daily', lag: 1, attr: 'NASA JPL MUR / GIBS' },
+    fmt: (v) => String(Math.round(v)) },
+  { id: 'vapor', label: '大气水汽', unit: 'cm', cmap: GVAP, special: 'gibs',
+    gibs: { gibs: 'MODIS_Terra_Water_Vapor_5km_Day', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'daily', lag: 1, attr: 'NASA MODIS Terra / GIBS' },
+    fmt: (v) => v.toFixed(1) },
 ];
 
 /* 分组(手风琴):图层按钮按组分节收纳,对齐 Windy 的导航结构 */
 const GROUPS = [
   { id: 'obs', label: '观测', layers: ['radar'] },
+  { id: 'satobs', label: '卫星观测', layers: ['fires', 'imerg', 'lst', 'smap', 'frozen', 'ndvi', 'aerosol', 'chl', 'seaice', 'vapor'] },
   { id: 'wind', label: '风', layers: ['wind', 'gust', 'barbs', 'wpd'] },
   { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl'] },
   { id: 'cloud', label: '云雨', layers: ['cloud', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
@@ -252,7 +296,9 @@ const map = L.map('map', {
 /* 底图:矢量线划(Natural Earth 本地化,渲染于气象层之上,不被填色遮挡);
  * 卫星 = NASA GIBS 影像在气象层之下 + 矢量线划叠加(hybrid)。 */
 import { VectorBasemap, LandFill } from './basemap.js?v=2';
+import { HillshadeLayer } from './hillshade.js';
 let satLayer = null;
+let hillshadeLayer = null;
 const GIBS_URL = (date) => `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
 const vectorBasemap = new VectorBasemap(map);
 const landfill = new LandFill(map);
@@ -275,6 +321,14 @@ function setBasemap(kind) {
     satLayer = L.tileLayer(OPENTOPO_URL, {
       maxNativeZoom: 10, maxZoom: 10, attribution: 'OpenTopoMap',
     }).addTo(map);
+  } else if (kind === 'hillshade') {
+    hillshadeLayer = new HillshadeLayer({
+      tileSize: 256, maxNativeZoom: 15, maxZoom: 10, attribution: 'NASA SRTM / AWS Terrain Tiles',
+    }).addTo(map);
+  }
+  if (hillshadeLayer && kind !== 'hillshade') {
+    map.removeLayer(hillshadeLayer);
+    hillshadeLayer = null;
   }
 }
 setBasemap('vector');
@@ -290,6 +344,8 @@ const aurora = new AuroraLayer(map);
 const tropical = new TropicalLayer(map);
 const stations = new StationLayer(map);
 const snowCover = new SnowCoverLayer(map);
+const gibs = new GibsLayer(map);
+const firesLayer = new FiresLayer(map, { toast });
 const aqi = new AqiLayer(map);
 const barbs = new BarbLayer(map);
 const timeline = new Timeline({ onChange: onTimeChange });
@@ -465,13 +521,17 @@ async function setLayer(id, silent = false) {
   const isRadar = def.special === 'radar';
   const isAqi = def.special === 'aqi';
   const isBarbs = def.special === 'barbs';
+  const isGibs = def.special === 'gibs';
+  const isFires = def.special === 'fires';
   radar.show(isRadar);
   aqi.show(isAqi);
   if (isAqi) aqi.setField(def.aqField || 'a', def.cmap);
   barbs.show(isBarbs);
+  gibs.show(isGibs, def.gibs);
+  firesLayer.show(isFires);
   document.body.dataset.radarActive = isRadar ? '1' : '0';
 
-  if (!isRadar && !isAqi && !isBarbs) {
+  if (!isRadar && !isAqi && !isBarbs && !isGibs && !isFires) {
     scalar.show(true);
     scalar.setVar(def.variable, layerCmap(def));
     scalar.setMaskLand(!!def.maskLand);
@@ -570,6 +630,7 @@ function applyOpacity(v) {
   state.opacity = v;
   scalar.setOpacity(v);
   radar.setBaseOpacity(0.82 * v);
+  gibs.setBaseOpacity(v);
   opacitySlider.value = Math.round(v * 100);
   opacityVal.textContent = Math.round(v * 100) + '%';
 }
@@ -698,6 +759,7 @@ function onTimeChange(ms) {
   radar.updateTime(ms);
   satellite.updateTime(ms);
   snowCover.updateTime(ms);
+  gibs.updateTime(ms);
 }
 
 /* ---------- 光标取值器(悬停读数) ---------- */

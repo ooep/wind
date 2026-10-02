@@ -63,7 +63,7 @@ fetch_obs() {
     return 0
   fi
   local ok=0
-  for sub in obs tropical aq; do
+  for sub in obs tropical aq fires; do
     if [ -d "/tmp/art_obs/$sub" ]; then
       rm -rf "dist/data/$sub"
       cp -r "/tmp/art_obs/$sub" "dist/data/$sub"

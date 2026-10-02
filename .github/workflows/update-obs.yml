@@ -29,6 +29,7 @@ jobs:
           node tools/bake-taf.js dist/data
           node tools/bake-tropical.js dist/data
           node tools/bake-aq.js dist/data
+          node tools/bake-fires.js dist/data
 
       - name: 上传数据 artifact(deploy-data 统一组装部署)
         uses: actions/upload-artifact@v4
@@ -38,4 +39,5 @@ jobs:
             dist/data/obs
             dist/data/tropical
             dist/data/aq
+            dist/data/fires
           retention-days: 3
