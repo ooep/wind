@@ -98,6 +98,9 @@ export class ForecastPanel {
     const cur = d.current;
     const [desc, icon] = wmo(cur.weather_code);
     this.title.textContent = `${desc} · ${Math.round(toDeg(cur.temperature_2m))}°`;
+    if (Number.isFinite(d.elevation)) {
+      this.coords.textContent += ` · 海拔 ${Math.round(d.elevation)} m`;
+    }
     const dir = compass(cur.wind_direction_10m);
     const staleNote = d.stale
       ? ` · 缓存于 ${p2(new Date(d.cachedAt * 1000).getHours())}:${p2(new Date(d.cachedAt * 1000).getMinutes())}(上游限流)`
@@ -128,7 +131,7 @@ export class ForecastPanel {
         <button data-tab="wave">海浪</button>
       </div>
       <div id="ptab-body"></div>
-      <div class="psun">🌅 ${fmtHourLocal(Date.parse(d.daily.sunrise[0]))} 日出 · 🌇 ${fmtHourLocal(Date.parse(d.daily.sunset[0]))} 日出日落(当地)</div>
+      <div class="psun">🌅 ${fmtHourLocal(Date.parse(d.daily.sunrise[0]))} 日出 · 🌇 ${fmtHourLocal(Date.parse(d.daily.sunset[0]))} 日落(当地)</div>
       <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">数据源:${modelLabel(d)},插值到该点坐标${staleNote}</div>
     `;
 
@@ -429,7 +432,7 @@ export class ForecastPanel {
     body.appendChild(wrap);
     const note = document.createElement('div');
     note.style.cssText = 'font-size:10.5px;color:var(--text-faint);margin-top:6px';
-    note.textContent = `数据源:Open-Meteo Marine(ECMWF WAM),未来 ${Math.min(7, 7)} 天波高/浪向/周期`;
+    note.textContent = '数据源:Open-Meteo Marine(ECMWF WAM)· 波高 / 浪向 / 周期预报';
     body.appendChild(note);
   }
 

@@ -25,15 +25,18 @@ export class ScalarLayer {
   setGrid(grid) { this.grid = grid; this.redraw(); }
   setVar(name, cmap) {
     this.varName = name; this.cmap = cmap;
-    this.canvas.style.opacity = 1; this.redraw();
+    this.redraw();
   }
   setFrame(fr) { this.fr = fr; this.redraw(); }
   show(on) {
     this.visible = on;
-    this.canvas.style.display = on ? 'block' : 'none';
+    this.canvas.style.opacity = on ? this.opacity : 0;
     if (on) this.redraw();
   }
-  setOpacity(v) { this.opacity = v; this.canvas.style.opacity = v; }
+  setOpacity(v) {
+    this.opacity = v;
+    if (this.visible) this.canvas.style.opacity = v;
+  }
 
   redraw() {
     if (!this.visible || !this.grid || !this.cmap) return;

@@ -70,6 +70,7 @@ const state = {
   basemap: urlState.bm || 'vector',
   unit: 'c',
   level: num(urlState.lv, 0),
+  opacity: Math.min(1, Math.max(0.35, num(urlState.op, 100) / 100)),
   grid: null,
   gridKey: '',
   fetchingKey: '',
@@ -117,19 +118,18 @@ const radar = new RadarLayer(map);
 const timeline = new Timeline({ onChange: onTimeChange });
 const panel = new ForecastPanel(() => state.model);
 
-/* ---------- 图例 ---------- */
+/* ---------- 图例(按色标分段取 5 档,兼容非线性色标) ---------- */
 const legendEl = document.getElementById('legend');
 function updateLegend() {
   const def = LAYERS.find((l) => l.id === state.layer);
   if (!def) { legendEl.hidden = true; return; }
   legendEl.hidden = false;
   document.getElementById('legend-title').textContent = `${def.label} · ${def.unit}`;
-  const bar = def.cmap.gradientCss();
-  document.getElementById('legend-bar').style.background = bar;
-  const min = def.cmap.stops[0][0], max = def.cmap.stops[def.cmap.stops.length - 1][0];
-  const labels = [min, (min + max) / 2, max].map((v) => def.fmt(v));
+  document.getElementById('legend-bar').style.background = def.cmap.gradientCss();
+  const stops = def.cmap.stops;
+  const idxs = [...new Set([0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * (stops.length - 1))))];
   document.getElementById('legend-labels').innerHTML =
-    `<span>${labels[0]}</span><span>${labels[1]}</span><span>${labels[2]}</span>`;
+    idxs.map((i) => `<span>${def.fmt(stops[i][0])}</span>`).join('');
 }
 
 /* ---------- 图层切换 ---------- */
@@ -157,6 +157,7 @@ function setLayer(id) {
   }
   state.layer = id;
   syncUrl();
+  document.getElementById('cursor-tip').hidden = true; // 旧图层读数立即失效
   document.querySelectorAll('.layer-btn').forEach((b) => b.classList.toggle('active', b.dataset.layer === id));
   const def = LAYERS.find((l) => l.id === id);
   updateLevelBar();
@@ -182,6 +183,21 @@ particleBtn.addEventListener('click', () => {
   state.particles = !state.particles;
   particleBtn.classList.toggle('active', state.particles);
   particles.setEnabled(state.particles);
+});
+
+/* ---------- 图层不透明度 ---------- */
+const opacitySlider = document.getElementById('opacity-slider');
+const opacityVal = document.getElementById('opacity-val');
+function applyOpacity(v) {
+  state.opacity = v;
+  scalar.setOpacity(v);
+  radar.setBaseOpacity(0.82 * v);
+  opacitySlider.value = Math.round(v * 100);
+  opacityVal.textContent = Math.round(v * 100) + '%';
+}
+opacitySlider.addEventListener('input', () => {
+  applyOpacity(opacitySlider.value / 100);
+  syncUrl();
 });
 
 /* ---------- 格点调度 ---------- */
@@ -292,6 +308,54 @@ function onTimeChange(ms) {
   radar.updateTime(ms);
 }
 
+/* ---------- 光标取值器(悬停读数) ---------- */
+const tipEl = document.getElementById('cursor-tip');
+const tipVal = document.getElementById('ct-val');
+const tipSub = document.getElementById('ct-sub');
+const DIR8 = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+let tipRaf = 0, tipXY = [0, 0], tipLL = null;
+
+function tipContent(def, ll) {
+  if (!state.grid) return null;
+  if (def.special) return null; // 雷达为外部瓦片,无本地格点值
+  const fr = state.grid.frameAt(state.timePos);
+  const v = state.grid.sample(def.variable, ll.lng, ll.lat, fr);
+  if (Number.isNaN(v)) return null;
+  let main = `${def.fmt(v)}${def.unit ? ' ' + def.unit : ''}`;
+  if (def.variable === 'wind') {
+    const uv = state.grid.sampleUV(ll.lng, ll.lat, fr);
+    if (uv) {
+      const [u, w] = uv;
+      const toDeg = (x, y) => (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+      const to = Math.round(toDeg(u, w));            // 指向下风方向(箭头去向)
+      const from = DIR8[Math.round(toDeg(-u, -w) / 45) % 8];
+      main = `<i class="ct-arrow" style="transform:rotate(${to - 90}deg)">➤</i>${Math.round(v)} m/s ${from}风`;
+    }
+  }
+  const lonN = ((ll.lng + 540) % 360) - 180;
+  return { main, sub: `${ll.lat.toFixed(2)}°, ${lonN.toFixed(2)}°` };
+}
+
+map.on('mousemove', (e) => {
+  if (e.originalEvent && e.originalEvent.pointerType === 'touch') return;
+  tipLL = e.latlng.wrap();
+  tipXY = [e.containerPoint.x, e.containerPoint.y];
+  if (tipRaf) return;
+  tipRaf = requestAnimationFrame(() => {
+    tipRaf = 0;
+    const def = LAYERS.find((l) => l.id === state.layer);
+    const t = def && !timeline.playing && tipContent(def, tipLL);
+    if (!t) { tipEl.hidden = true; return; }
+    tipVal.innerHTML = t.main;
+    tipSub.textContent = t.sub;
+    tipEl.hidden = false;
+    const x = Math.min(tipXY[0] + 16, window.innerWidth - 150);
+    const y = Math.max(tipXY[1] - 44, 64);
+    tipEl.style.transform = `translate(${x}px, ${y}px)`;
+  });
+});
+map.on('mouseout movestart', () => { tipEl.hidden = true; });
+
 /* ---------- 设置 ---------- */
 document.getElementById('model-select').addEventListener('change', (e) => {
   state.model = e.target.value;
@@ -317,6 +381,14 @@ document.getElementById('unit-select').addEventListener('change', (e) => {
 const about = document.getElementById('about');
 document.getElementById('about-btn').addEventListener('click', () => about.showModal());
 document.getElementById('about-close').addEventListener('click', () => about.close());
+
+/* ---------- 全屏 ---------- */
+document.getElementById('fs-btn').addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch { toast('浏览器拒绝了全屏请求'); }
+});
 
 /* ---------- 移动端设置抽屉 ---------- */
 const settingsEl = document.getElementById('settings');
@@ -378,6 +450,7 @@ function syncUrl() {
     p.set('lon', c.lng.toFixed(3));
     p.set('z', map.getZoom());
     if (state.timePos) p.set('t', state.timePos);
+    if (state.opacity < 1) p.set('op', Math.round(state.opacity * 100));
     history.replaceState(null, '', '#' + p.toString());
   }, 600);
 }
@@ -403,12 +476,12 @@ document.getElementById('loc-btn').addEventListener('click', () => {
 
 /* ---------- Toast ---------- */
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms = 5000) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
 
 /* ---------- 气压层选择器 ---------- */
@@ -446,9 +519,16 @@ window.__app_map = map;
 if (urlState.m) document.getElementById('model-select').value = state.model;
 if (urlState.bm) document.getElementById('basemap-select').value = state.basemap;
 setBasemap(state.basemap);
+applyOpacity(state.opacity);
 setLayer(state.layer);
 updateLevelBar();
 particles.setEnabled(true);
 particles.start();
 if (urlState.t) state.pendingTime = num(urlState.t, 0);
 fetchGridNow();
+
+/* 首访提示 */
+if (!localStorage.getItem('fy_hint_shown')) {
+  try { localStorage.setItem('fy_hint_shown', '1'); } catch { /* 隐私模式 */ }
+  toast('点击地图任意位置查看该点详细预报 · 悬停可读取数值 · 空格播放时间动画', 9000);
+}

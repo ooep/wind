@@ -13,8 +13,15 @@ export class RadarLayer {
     this.activeIdx = 0;
     this.currentPath = null;
     this.lastMs = null;
+    this.baseOpacity = 0.82;
     this._fetchTimer = null;
     this._loading = false;
+  }
+
+  /* 全局不透明度联动(0.82 为雷达瓦片的默认基准) */
+  setBaseOpacity(v) {
+    this.baseOpacity = Math.min(1, Math.max(0, v));
+    if (this.layers.length) this.layers[this.activeIdx].setOpacity(this.baseOpacity);
   }
 
   async ensureMeta() {
@@ -85,7 +92,7 @@ export class RadarLayer {
     const firstCreate = !this.layers.length;
     this._ensureLayers(pick.path);
     if (firstCreate) {
-      this.layers[this.activeIdx].setOpacity(0.82);
+      this.layers[this.activeIdx].setOpacity(this.baseOpacity);
       this.layers[this.activeIdx].setUrl(`${this.meta.host}${pick.path}/256/{z}/{x}/{y}/${COLOR_SCHEME}/${SMOOTH}_1.png`);
       this.currentPath = pick.path;
       return;
@@ -94,7 +101,7 @@ export class RadarLayer {
     const next = this.layers[this.activeIdx ^ 1];
     const cur = this.layers[this.activeIdx];
     next.setUrl(`${this.meta.host}${pick.path}/256/{z}/{x}/{y}/${COLOR_SCHEME}/${SMOOTH}_1.png`);
-    next.setOpacity(0.82);
+    next.setOpacity(this.baseOpacity);
     cur.setOpacity(0);
     this.activeIdx ^= 1;
   }

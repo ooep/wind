@@ -88,7 +88,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   transition: all 0.15s;
 }
 #loc-btn:hover { color: var(--accent); border-color: rgba(69, 196, 255, 0.4); }
-#share-btn { font-size: 14px; }
+#share-btn, #fs-btn, #about-btn {
+  background: none; border: none; color: var(--text-dim); font-size: 16px; line-height: 1;
+  border-radius: 8px; width: 30px; height: 30px; cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+#share-btn:hover, #fs-btn:hover, #about-btn:hover { color: var(--text); background: var(--panel-soft); }
 
 /* ---------- 设置(右上) ---------- */
 #settings {
@@ -106,17 +111,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 }
 #settings select:hover { border-color: var(--border-strong); }
 #settings select:focus { border-color: rgba(69, 196, 255, 0.5); }
-#about-btn {
-  background: none; border: none; color: var(--text-dim); font-size: 16px; line-height: 1;
-  border-radius: 8px; width: 30px; height: 30px; cursor: pointer; transition: all 0.15s;
-}
-#about-btn:hover { color: var(--text); background: var(--panel-soft); }
 #settings-toggle { display: none; }
 
 /* ---------- 图层栏(左) ---------- */
 #layerbar {
   position: fixed; left: 14px; top: 76px; z-index: 1000;
-  width: 116px;
+  width: 116px; max-height: calc(100vh - 92px); overflow-y: auto;
   background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 7px; box-shadow: var(--shadow);
@@ -236,6 +236,38 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   display: flex; justify-content: space-between; margin-top: 4px;
   font-size: 10px; color: var(--text); font-variant-numeric: tabular-nums;
 }
+
+/* ---------- 不透明度滑块(图层栏底部) ---------- */
+#opacity-ctl { display: flex; align-items: center; gap: 7px; padding: 3px 5px 4px; }
+#opacity-ctl span { font-size: 10.5px; color: var(--text-faint); flex: none; }
+#opacity-ctl b { font-size: 10.5px; color: var(--text-dim); width: 30px; text-align: right; flex: none; font-variant-numeric: tabular-nums; font-weight: 400; }
+#opacity-slider {
+  flex: 1; min-width: 0; appearance: none; -webkit-appearance: none;
+  height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.18); outline: none; cursor: pointer;
+}
+#opacity-slider::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 3px rgba(69, 196, 255, 0.22);
+}
+#opacity-slider::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--accent); }
+
+/* ---------- 光标取值器(Windy 式悬停读数) ---------- */
+#cursor-tip {
+  position: fixed; top: 0; left: 0; z-index: 1250;
+  background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-strong); border-radius: 9px;
+  padding: 6px 10px 7px; pointer-events: none; box-shadow: var(--shadow);
+  min-width: 92px; will-change: transform;
+}
+#ct-val {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#ct-sub { display: block; font-size: 10px; color: var(--text-faint); margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-arrow { display: inline-block; font-style: normal; color: var(--accent); font-size: 12px; text-shadow: 0 0 6px rgba(69, 196, 255, 0.6); }
+
+/* 填色层切换淡入 */
+#scalar-canvas { transition: opacity 0.28s ease; }
 
 /* ---------- 预报面板 ---------- */
 #panel {
@@ -400,6 +432,8 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
   .layer-btn { padding: 7px 8px; flex: none; }
   .layer-btn span { display: none; }
   #levelbar { display: none; }  /* 移动端气压层暂收起 */
+  #opacity-ctl { display: none; }
+  #cursor-tip { display: none; }  /* 触屏无悬停 */
 
   #timelinebar { width: calc(100vw - 148px); bottom: 14px; left: 10px; transform: none; gap: 8px; padding: 8px 10px; }
   #time-display { width: 96px; }

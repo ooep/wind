@@ -41,6 +41,11 @@
   <div id="layer-buttons"></div>
   <div class="sep"></div>
   <div id="levelbar" hidden></div>
+  <div id="opacity-ctl" title="气象图层不透明度">
+    <span>透明度</span>
+    <input type="range" id="opacity-slider" min="35" max="100" step="5" value="100">
+    <b id="opacity-val">100%</b>
+  </div>
 </nav>
 
 <!-- 右上:设置 -->
@@ -72,6 +77,9 @@
   <label class="ctl" title="温度单位"><span>单位</span>
     <select id="unit-select"><option value="c">°C</option><option value="f">°F</option></select>
   </label>
+  <button id="fs-btn" title="全屏切换">
+    <svg viewBox="0 0 24 24" width="15" height="15"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
   <button id="share-btn" title="复制分享链接">⧉</button>
   <button id="about-btn" title="数据来源与说明">ⓘ</button>
 </div>
@@ -132,6 +140,7 @@
       <tr><th>卫星影像</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — NASA 官方 VIIRS/MODIS 真彩影像,每日更新。</td></tr>
       <tr><th>地名检索</th><td>Open-Meteo Geocoding(GeoNames 数据)。</td></tr>
       <tr><th>底图</th><td><a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> 矢量线划(海岸线/国界/湖泊/城市标注,已本地化,公有领域);「卫星 + 线划」模式的影像来自 NASA GIBS。矢量底图渲染在气象图层之上,不会被填色遮挡。</td></tr>
+      <tr><th>快捷键</th><td><b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>Esc</b> 关闭面板/弹窗 · 鼠标悬停地图任意位置可读取当前图层数值</td></tr>
     </table>
     <p>开放数据许可:NOAA GFS 为美国官方产出(public domain);Open-Meteo 数据 CC BY 4.0(非商业免费,商业使用需授权)。本站为技术演示,不构成任何气象决策依据。</p>
   </div>
@@ -139,6 +148,7 @@
 
 <div id="toast" hidden></div>
 <div id="grid-loading" hidden><div class="spinner"></div><span>正在加载气象场数据…</span></div>
+<div id="cursor-tip" hidden><b id="ct-val"></b><span id="ct-sub"></span></div>
 
 <footer id="attrib">
   数据 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>(GFS/ICON/ECMWF) ·
@@ -161,6 +171,6 @@
   window.addEventListener('error', (e) => window.__capt.push('ERR ' + e.message + ':' + e.lineno));
 </script>
 <script src="vendor/leaflet/leaflet.js"></script>
-<script type="module" src="js/main.js?v=3"></script>
+<script type="module" src="js/main.js?v=4"></script>
 </body>
 </html>
