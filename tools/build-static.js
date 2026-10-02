@@ -141,10 +141,23 @@ async function main() {
     }
     console.log(`  ${Object.keys(coarse.vars).length} 个变量,共 ${(total / 1e6).toFixed(1)} MB`);
 
-    // GFS 气压层包:每层 u/v/temp/rh 一个文件(键 u@850 → v_u_L850.json),前端按层级懒加载
+    // GFS 气压层包:每层 u/v/temp/rh 一个文件(键 u@850 → v_u_L850.json),前端按层级懒加载。
+    // 层级数组必须与 meta.times 逐帧对齐(前端按同一时间索引取数),不对齐的层宁缺毋滥;
+    // 单层失败只跳过该层,不株连整轮(地面包与已完成层照常发布)
     if (model === 'gfs_raw') {
+      let levelKeys = 0;
       for (const level of gfs.LEVELS) {
-        const lg = await gfs.levelRawGrid(level, -180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
+        let lg;
+        try {
+          lg = await gfs.levelRawGrid(level, -180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
+        } catch (e) {
+          console.error(`  气压层 ${level} hPa 摄取失败,跳过:`, e.message);
+          continue;
+        }
+        if (JSON.stringify(lg.times) !== JSON.stringify(coarse.times)) {
+          console.error(`  气压层 ${level} hPa 时间轴与地面不一致(${lg.times.length} vs ${coarse.times.length} 帧),跳过`);
+          continue;
+        }
         for (const [vk, b64] of Object.entries(lg.vars)) {
           const f32 = Buffer.from(b64, 'base64');
           const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
@@ -159,10 +172,12 @@ async function main() {
           fs.writeFileSync(file, JSON.stringify({ scale, data: Buffer.from(q.buffer).toString('base64') }));
           total += fs.statSync(file).size;
           varsManifest[key] = { scale, file: `v_${vk}_L${level}.json` };
+          levelKeys++;
         }
         console.log(`  气压层 ${level} hPa 完成`);
       }
-      fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta)); // 回写含层级键的 meta
+      if (levelKeys) fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta)); // 回写含层级键的 meta
+      else console.error('  未写入任何层级包,meta 保持仅地面变量');
     }
 
     // 0.5° 区域分块(实验性增强包)

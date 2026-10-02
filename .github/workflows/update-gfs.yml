@@ -25,11 +25,21 @@ jobs:
         with:
           node-version: '20'
 
-      # 跨轮恢复摄取进度:限流期的抓取逐轮累积
+      # 跨轮恢复摄取进度:限流期的抓取逐轮累积(含 9 个气压层引擎目录)
       - name: 恢复摄取缓存
         uses: actions/cache@v4
         with:
-          path: .cache/gfsraw
+          path: |
+            .cache/gfsraw
+            .cache/gfsraw-l925
+            .cache/gfsraw-l850
+            .cache/gfsraw-l700
+            .cache/gfsraw-l500
+            .cache/gfsraw-l300
+            .cache/gfsraw-l250
+            .cache/gfsraw-l200
+            .cache/gfsraw-l150
+            .cache/gfsraw-l100
           key: ingest-gfs_raw-latest
           restore-keys: ingest-gfs_raw-
 
@@ -41,7 +51,17 @@ jobs:
         uses: actions/cache/save@v4
         if: always()
         with:
-          path: .cache/gfsraw
+          path: |
+            .cache/gfsraw
+            .cache/gfsraw-l925
+            .cache/gfsraw-l850
+            .cache/gfsraw-l700
+            .cache/gfsraw-l500
+            .cache/gfsraw-l300
+            .cache/gfsraw-l250
+            .cache/gfsraw-l200
+            .cache/gfsraw-l150
+            .cache/gfsraw-l100
           key: ingest-gfs_raw-latest-${{ github.run_id }}
 
       - name: 上传数据产物(deploy-data 工作流统一组装部署,数据不再提交 main)

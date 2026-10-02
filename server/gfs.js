@@ -4,7 +4,7 @@
  * 数据源:AWS 开放数据桶 noaa-gfs-bdp-pds(NOAA 官方发布)
  * 结构:地面引擎(21 变量:风/温/湿/气压/降水/云量三层/阵风/能见度/雪深/CAPE/可降水/云水/
  *       土壤湿温/冻结高度/CIN/新雪)
- *       + 气压层引擎(925/850/700/500/300 hPa 的风/温/湿,按需摄取)
+ *       + 气压层引擎(9 层 925–100 hPa 的风/温/湿,按需摄取,时间轴与地面一致)
  * 流程:run 发现 → 索引定位 → Range 下载 → 自研 GRIB2 解码 → 单位换算
  *   → Int16 存储(内存 LRU + 磁盘捆包)→ 格点 / 点位采样接口。
  */
@@ -21,16 +21,12 @@ const MAX_F = 168;            // 取到 +168h(7 天)
 const HOURLY_H = 48;          // 逐小时步长上限(GFS pgrb2 原生逐小时,此处取 48h 平衡体量)
 const STEP_H = 3;             // 逐小时段之外的存储步长
 const stepCadence = (step) => (step <= HOURLY_H ? 1 : STEP_H);
-function buildSteps(levelMode) {
+function buildSteps() {
+  /* 地面与气压层共用同一时间轴:静态包的层级文件按 meta.times 逐帧对齐取数,
+   * 时间轴一旦分叉,层级数据会错位、尾部越界为空 */
   const a = [];
-  if (levelMode) {
-    // 气压层:控制摄取量,+48h 内 3 小时步长,其后 6 小时
-    for (let s = 0; s <= HOURLY_H; s += STEP_H) a.push(s);
-    for (let s = HOURLY_H + 2 * STEP_H; s <= MAX_F; s += 2 * STEP_H) a.push(s);
-  } else {
-    for (let s = 0; s <= HOURLY_H; s++) a.push(s);
-    for (let s = HOURLY_H + STEP_H; s <= MAX_F; s += STEP_H) a.push(s);
-  }
+  for (let s = 0; s <= HOURLY_H; s++) a.push(s);
+  for (let s = HOURLY_H + STEP_H; s <= MAX_F; s += STEP_H) a.push(s);
   return a;
 }
 const CONCURRENCY = 10;
@@ -97,7 +93,11 @@ function utcStr(d) {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
+let runsMemo = null, runsMemoAt = 0;
 async function discoverRuns() {
+  /* 10 分钟内共享发现结果:同一烘焙进程里地面 + 9 个气压层引擎必须落在同一
+   * run 组合上,否则层级与地面时间轴分叉(顺带省掉重复的 idx 探测) */
+  if (runsMemo && Date.now() - runsMemoAt < 10 * 60e3) return runsMemo;
   const now = Date.now();
   const cands = [];
   for (const dayOff of [0, 1, 2]) {
@@ -122,6 +122,7 @@ async function discoverRuns() {
     if (found.length && found[found.length - 1].init <= needPast) break;
   }
   if (!found.length) throw new Error('未找到任何可用的 GFS run(NOAA 数据源不可达?)');
+  runsMemo = found; runsMemoAt = Date.now();
   return found;
 }
 
@@ -298,7 +299,7 @@ class GfsEngine {
     }
     const times = [];
     const pastStart = Date.now() - PAST_H * 3600e3;
-    const steps = buildSteps(this.levelMode);
+    const steps = buildSteps();
     if (P) {
       for (const step of steps) {
         const ms = P.init + step * 3600e3;
@@ -471,15 +472,17 @@ class GfsEngine {
     const src = {};
     for (const vk of this.varKeys) src[vk] = new Float32Array(times.length * nP).fill(NaN);
 
-    let p = 0;
-    for (const lat of lats) {
-      for (const lon of lons) {
-        for (let t = 0; t < times.length; t++) {
-          const s2 = this.sampleAll(times[t].runKey, times[t].step, lat, lon);
-          if (!s2) continue;
-          for (const vk of this.varKeys) src[vk][t * nP + p] = s2[vk];
+    /* t 外层循环:每个步长的捆包整场只加载一次;若 t 内层,全球网格的
+     * 步长数会超出 mem 上限,逐列反复回读磁盘 */
+    for (let t = 0; t < times.length; t++) {
+      const tt = times[t];
+      let p = 0;
+      for (const lat of lats) {
+        for (const lon of lons) {
+          const s2 = this.sampleAll(tt.runKey, tt.step, lat, lon);
+          if (s2) for (const vk of this.varKeys) src[vk][t * nP + p] = s2[vk];
+          p++;
         }
-        p++;
       }
     }
     const f32b64 = (arr) => Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString('base64');
@@ -677,7 +680,9 @@ function status() {
 /* 气压层全球粗网格(静态构建用):仅该层的 u/v/temp/rh */
 async function levelRawGrid(level, w, s, e, n, stepDeg) {
   const lev = await levelEngine(level).gridCore(w, s, e, n, stepDeg);
-  return { ...lev, vars: Object.fromEntries(Object.entries(lev.vars).filter(([k]) => ['u', 'v', 'temp', 'rh'].includes(k))) };
+  const out = { ...lev, vars: Object.fromEntries(Object.entries(lev.vars).filter(([k]) => ['u', 'v', 'temp', 'rh'].includes(k))) };
+  lev.mem.clear(); lev.memOrder.length = 0; // 烘焙串行跑 9 层,采样完及时释放内存
+  return out;
 }
 
-module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, levelRawGrid };
+module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, levelRawGrid, buildSteps };
