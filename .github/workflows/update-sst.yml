@@ -31,11 +31,12 @@ jobs:
         run: pip install --quiet netCDF4 numpy
 
       - name: 烘焙海温静态包
-        run: python3 tools/bake-sst.py dist/data
+        run: python3 tools/bake-sst.py out/data
 
-      - name: 上传数据 artifact(deploy-data 统一组装部署)
+      - name: 上传数据产物(deploy-data 工作流统一组装部署,数据不再提交 main)
         uses: actions/upload-artifact@v4
         with:
           name: data-ocean_raw
-          path: dist/data/ocean_raw
+          path: out/data/
           retention-days: 3
+          if-no-files-found: error
