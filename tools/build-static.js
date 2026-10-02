@@ -85,7 +85,9 @@ async function bakeExtremes(coarse, nMembers) {
     try {
       eng = gefsMemberEngine(n);
       const run = await eng.ensureLoaded();
-      const idxMap = coarse.times.map((t) => run.times.indexOf(t));
+      // run.times 是 plan 原始对象({runKey,step,ms});coarse.times 是 ISO 字符串,按 ms 对齐
+      const memberMs = run.times.map((x) => x.ms);
+      const idxMap = coarse.times.map((t) => memberMs.indexOf(Date.parse(t + ':00Z')));
       if (idxMap.some((i) => i < 0)) throw new Error('时间轴与控制成员不一致');
       for (let t = 0; t < P; t++) {
         const tt = run.times[idxMap[t]];
