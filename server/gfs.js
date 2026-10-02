@@ -18,7 +18,15 @@ const S3 = 'https://noaa-gfs-bdp-pds.s3.amazonaws.com';
 const RES = '0p50';
 const CACHE_DIR = path.join(__dirname, '..', '.cache', 'gfsraw');
 const MAX_F = 168;            // 取到 +168h(7 天)
-const STEP_H = 3;             // 存储步长(3 小时)
+const HOURLY_H = 48;          // 逐小时步长上限(GFS pgrb2 原生逐小时,此处取 48h 平衡体量)
+const STEP_H = 3;             // 逐小时段之外的存储步长
+const stepCadence = (step) => (step <= HOURLY_H ? 1 : STEP_H);
+function buildSteps() {
+  const a = [];
+  for (let s = 0; s <= HOURLY_H; s++) a.push(s);
+  for (let s = HOURLY_H + STEP_H; s <= MAX_F; s += STEP_H) a.push(s);
+  return a;
+}
 const CONCURRENCY = 10;
 const PAST_H = 24;            // 时间轴向过去延伸的小时数(由上一个 run 补齐)
 const NJ = 361, NI = 720;     // 0.5° 全球网格 90..-90 / 0..359.5
@@ -282,15 +290,16 @@ class GfsEngine {
       if (c.init <= Date.now() - PAST_H * 3600e3) { P = c; break; }
     }
     const times = [];
-    const pastStart = Math.floor((Date.now() - PAST_H * 3600e3) / (STEP_H * 3600e3)) * STEP_H * 3600e3;
+    const pastStart = Date.now() - PAST_H * 3600e3;
+    const steps = buildSteps();
     if (P) {
-      for (let t = pastStart; t < R.init; t += STEP_H * 3600e3) {
-        const step = Math.round((t - P.init) / 3600e3);
-        if (step < 0) continue;
-        times.push({ runKey: P.key, step, ms: t });
+      for (const step of steps) {
+        const ms = P.init + step * 3600e3;
+        if (ms < pastStart || ms >= R.init) continue;
+        times.push({ runKey: P.key, step, ms });
       }
     }
-    for (let step = 0; step <= MAX_F; step += STEP_H) {
+    for (const step of steps) {
       times.push({ runKey: R.key, step, ms: R.init + step * 3600e3 });
     }
     return { R, P, times };
@@ -374,7 +383,7 @@ class GfsEngine {
         this.writeVar(runKey, step, varKey, new Int16Array(NJ * NI));
         return;
       }
-      const prevTag = `f${String(step - STEP_H).padStart(3, '0')}`;
+      const prevTag = `f${String(step - stepCadence(step)).padStart(3, '0')}`;
       const prevUrl = `${S3}/gfs.${runKey}/atmos/gfs.t${hh}z.pgrb2.${RES}.${prevTag}`;
       const cfgW = this.varCfg.newsnow;
       const [recNow, recPrev] = await Promise.all([

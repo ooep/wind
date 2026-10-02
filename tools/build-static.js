@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const gfs = require('../server/gfs');
+const waves = require('../server/waves');
 
 function arg(name, dflt) {
   const i = process.argv.indexOf('--' + name);
@@ -42,6 +43,10 @@ function varScale(model, vk) {
     const cfg = gfs.surfaceEngine.varCfg[vk];
     if (cfg) return cfg.scale;
   } else {
+    if (model === 'waves_raw') {
+      const cfg = waves.engine.def.varCfg[vk];
+      if (cfg && cfg.scale) return cfg.scale;
+    }
     const eng = require('../server/nwp').ENGINES[model];
     const cfg = eng && eng.def.varCfg[vk];
     if (cfg && cfg.scale) return cfg.scale;
@@ -85,6 +90,7 @@ async function main() {
   for (const model of MODELS) {
     let engine;
     if (model === 'gfs_raw') engine = gfs.surfaceEngine;
+    else if (model === 'waves_raw') engine = waves.engine;
     else engine = require('../server/nwp').ENGINES[model];
     if (!engine) { console.error(`未知模型 ${model}`); process.exit(1); }
     const rawGridOf = (w, s, e, n, step) =>

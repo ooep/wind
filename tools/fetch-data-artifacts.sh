@@ -38,6 +38,7 @@ fetch_model "update-gfs.yml"   "gfs_raw"
 fetch_model "update-gefs.yml"  "gefs_raw"
 fetch_model "update-ecmwf.yml" "ecmwf_raw"
 fetch_model "update-aifs.yml"  "aifs_raw"
+fetch_model "update-waves.yml" "waves_raw"
 
 # 重建全局 index.json(按各模式现有产物)
 node tools/build-static.js --out dist/data --index-only

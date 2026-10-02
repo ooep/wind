@@ -1,0 +1,58 @@
+name: data · GFS Wave 0.25°
+
+# 海浪数据管道:NOAA GFS Wave 全球 0.25°(与大气 GFS 同桶)。
+# 定时抓取原始 GRIB2(模板 5.40 JPEG2000,经 python3+Pillow 解码)
+# → 自解码 → 生成静态数据包 → 上传 artifact(deploy-data 统一组装部署)。
+on:
+  schedule:
+    - cron: '50 3,9,15,21 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-waves_raw
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # J2K 解码依赖:python3 预装,Pillow 轮子内置 OpenJPEG
+      - name: 安装 J2K 解码依赖
+        run: pip3 install --user pillow
+
+      # 跨轮恢复摄取进度:限流期的抓取逐轮累积
+      - name: 恢复摄取缓存
+        uses: actions/cache@v4
+        with:
+          path: .cache/nwp-waves_raw
+          key: ingest-waves_raw-latest
+          restore-keys: ingest-waves_raw-
+
+      - name: 生成静态数据包
+        run: |
+          node tools/build-static.js --out out/data --models waves_raw
+
+      - name: 保存摄取缓存
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache/nwp-waves_raw
+          key: ingest-waves_raw-latest-${{ github.run_id }}
+
+      - name: 上传数据产物(deploy-data 工作流统一组装部署)
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-waves_raw
+          path: out/data/
+          retention-days: 3
+          if-no-files-found: error

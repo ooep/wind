@@ -48,6 +48,9 @@ export class Timeline {
 
     setInterval(() => this._refreshNowMarker(), 60_000);
     this._refreshNowMarker();
+
+    // 窗口尺寸变化时按轨道宽度重建刻度(标签密度自适应)
+    window.addEventListener('resize', () => this._buildTicks());
   }
 
   setTimes(times) {
@@ -105,7 +108,7 @@ export class Timeline {
     if (this._raf) cancelAnimationFrame(this._raf);
   }
 
-  _range() { return this.times[this.times.length - 1] - this.times[0]; }
+  _range() { return this.times ? this.times[this.times.length - 1] - this.times[0] : 0; }
 
   _buildTicks() {
     const times = this.times;
@@ -115,6 +118,9 @@ export class Timeline {
     const start = times[0];
     const frag = document.createDocumentFragment();
     const majorEvery = span > 60 * 3600e3 ? 24 : 12;
+    // 标签密度随轨道宽度自适应:窄轨只标整日,极窄不标,避免互相叠字
+    const trackW = this.el.clientWidth || 720;
+    const labelMode = trackW < 340 ? 0 : trackW < 560 ? 1 : 2; // 0=无 1=仅整日 2=常规
     // 对齐到整小时
     const firstHour = Math.ceil(start / 3600e3) * 3600e3;
     for (let t = firstHour; t <= times[times.length - 1]; t += 3600e3) {
@@ -127,7 +133,7 @@ export class Timeline {
         tick.className = 'tick' + (major ? ' major' : '');
         tick.style.left = x;
         frag.appendChild(tick);
-        if (major) {
+        if (labelMode === 2 ? major : labelMode === 1 && isMidnight) {
           const lb = document.createElement('div');
           lb.className = 'tick-label';
           lb.style.left = x;

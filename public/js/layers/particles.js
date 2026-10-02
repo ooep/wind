@@ -59,6 +59,12 @@ export class ParticleLayer {
 
   setFrame(fr) { this.fr = fr; }
 
+  /* 粒子着色:默认按 u/v 风速;海浪等图层可指定标量变量(如波高) */
+  setColorVar(varName, cmap) {
+    this.colorVar = varName || null;
+    this.colorCmap = cmap || null;
+  }
+
   setEnabled(on) {
     this.enabled = on;
     if (!on) { this.stop(); this._clear(); } else this.start();
@@ -115,8 +121,8 @@ export class ParticleLayer {
       const mag = Math.hypot(dx, dy);
       if (mag < 0.06) { p.age = p.ttl + 1; continue; } // 静风:重生
       if (mag > MAX_SPEED_PX) { dx *= MAX_SPEED_PX / mag; dy *= MAX_SPEED_PX / mag; }
-      const spd = Math.hypot(u, v);
-      const c = WIND.color(spd);
+      const spd = this.colorVar ? grid.sample(this.colorVar, ll.lng, ll.lat, fr) : Math.hypot(u, v);
+      const c = (this.colorCmap || WIND).color(spd);
       // 略微提亮,保证深色底图上可见
       const r = Math.min(255, c[0] + 45), g = Math.min(255, c[1] + 45), b = Math.min(255, c[2] + 45);
       ctx.strokeStyle = `rgba(${r},${g},${b},0.9)`;

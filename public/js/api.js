@@ -8,7 +8,7 @@
  *  2. 自动探测 /dist/data/index.json(仓库绑定的 Pages 部署存在 → 静态模式)
  *  3. 都不存在 → 服务端模式
  */
-import { Grid } from './util.js';
+import { Grid, b64ToF32 } from './util.js';
 
 let STATIC_BASE = '';
 let staticMode = false;
@@ -129,28 +129,67 @@ async function staticModelGrid(model, needs) {
     return g;
   }
   const index = await staticIndexGet();
-  const meta = await staticMetaGet(model);
-  const grid = meta.grid;
-  const shape = {
-    model, source: `静态数据包(${model})`,
-    step: grid.dlon, wrapLon: true,
-    cols: grid.ni, rows: grid.nj,
-    times: meta.times, generated: meta.generated,
-    lat0: grid.lat0, lon0: grid.lon0,
-    lats: latsOf(grid), lons: lonsOf(grid),
-    vars: {},
-  };
-  const gridObj = new GridCtor(shape);
-  gridObj.__model = model;
-  gridObj.__runKey = index.models[model].runKey;
-  gridObj.__staticMeta = meta;
+  const entry = index.models[model];
+  if (!entry) throw new Error(`静态数据未包含模式 ${model}`);
+  let gridObj = null;
+  // 首选 per-var 格式;meta 未就绪(无 grid 字段)或缺文件时回退旧 global 全量包
+  try {
+    const meta = await staticMetaGet(model);
+    if (meta && meta.grid) {
+      const grid = meta.grid;
+      const shape = {
+        model, source: `静态数据包(${model})`,
+        step: grid.dlon, wrapLon: true,
+        cols: grid.ni, rows: grid.nj,
+        times: meta.times, generated: meta.generated,
+        lat0: grid.lat0, lon0: grid.lon0,
+        lats: latsOf(grid), lons: lonsOf(grid),
+        vars: {},
+      };
+      gridObj = new GridCtor(shape);
+      gridObj.__model = model;
+      gridObj.__runKey = entry.runKey;
+      gridObj.__staticMeta = meta;
+    }
+  } catch { /* meta 缺失或损坏 → global 回退 */ }
+  if (!gridObj) gridObj = await staticGlobalGrid(model, entry);
   staticGrids.set(model, gridObj);
   if (needs) await ensureGridVars(gridObj, needs);
   return gridObj;
 }
 
+/* 旧格式 global-2.5.json(全变量一体,int16 编码)→ 与 /api/grid 同构的 Grid */
+async function staticGlobalGrid(model, entry) {
+  if (!entry.global) throw new Error(`模式 ${model} 的静态数据尚未生成`);
+  const r = await fetch(`${STATIC_BASE}/${model}/${entry.runKey}/${entry.global}`);
+  if (!r.ok) throw new Error(`全局数据包加载失败(${r.status})`);
+  const pack = await r.json();
+  const grid = pack.grid;
+  if (!grid || !grid.ni) throw new Error('全局数据包缺少网格定义');
+  const shape = {
+    model, source: `静态数据包(${model})`,
+    step: grid.dlon, wrapLon: true,
+    cols: grid.ni, rows: grid.nj,
+    times: pack.times, generated: pack.generated,
+    lat0: grid.lat0, lon0: grid.lon0,
+    lats: latsOf(grid), lons: lonsOf(grid),
+    vars: {},
+  };
+  const gridObj = new GridCtor(shape);
+  for (const [vk, e] of Object.entries(pack.vars || {})) {
+    gridObj.vars[vk] = e && typeof e === 'object' && e.data
+      ? f32FromI16B64(e.data, +e.scale || 1)
+      : b64ToF32(e);
+  }
+  gridObj.__model = model;
+  gridObj.__runKey = entry.runKey;
+  gridObj.__staticMeta = { format: 'global' }; // 全变量已加载,ensureGridVars 直通
+  return gridObj;
+}
+
 /* 静态模式:点预报由本地格点插值合成(与 /api/point 响应同构);needs 可精简(对比 tab 只需温/风) */
 async function staticPoint(lat, lon, model, needs) {
+  if (model === 'waves_raw') return staticPointWaves(lat, lon, model);
   const grid = await staticModelGrid(model, needs || ['temp', 'rh', 'precip', 'cloud', 'msl', 'u', 'v', 'gust']);
   const times = grid.times; // Grid 构造时已解析为毫秒
   const fr = { i0: 0, i1: 0, f: 0 };
@@ -251,6 +290,43 @@ export async function staticAvailableModels() {
     const index = await staticIndexGet();
     return Object.keys(index.models || {});
   } catch { return null; }
+}
+
+/* 海浪模式点位:波高/周期/方向系列,大气要素为 null(面板走海洋视图) */
+async function staticPointWaves(lat, lon, model) {
+  const grid = await staticModelGrid(model, ['wvh', 'wvp', 'wvd']);
+  const times = grid.times.map((t) => Date.parse(t + ':00Z'));
+  const fr = { i0: 0, i1: 0, f: 0 };
+  const series = times.map((ms, ti) => {
+    fr.i0 = ti; fr.i1 = ti; fr.f = 0;
+    return {
+      ms,
+      wvh: grid.sample('wvh', lon, lat, fr),
+      wvp: grid.sample('wvp', lon, lat, fr),
+      wvd: grid.sample('wvd', lon, lat, fr),
+    };
+  });
+  const r2 = (v) => (Number.isFinite(v) ? +v.toFixed(2) : null);
+  const r1 = (v) => (Number.isFinite(v) ? +v.toFixed(1) : null);
+  const cur = series.find((x) => x.ms <= Date.now() + 1800e3 && Number.isFinite(x.wvh)) || series[0];
+  return {
+    source: `静态数据包(${model}),浏览器本地插值`,
+    current: {
+      temperature_2m: null, relative_humidity_2m: null, apparent_temperature: null,
+      is_day: 1, precipitation: null, weather_code: null, cloud_cover: null,
+      pressure_msl: null, wind_speed_10m: null, wind_direction_10m: null, wind_gusts_10m: null,
+      wave_height: r2(cur.wvh), wave_period: r1(cur.wvp),
+      wave_direction: Number.isFinite(cur.wvd) ? Math.round(cur.wvd) : null,
+    },
+    hourly: {
+      time: series.map((x) => naiveLocal(x.ms)),
+      temperature_2m: series.map(() => null),
+      wave_height: series.map((x) => r2(x.wvh)),
+      wave_period: series.map((x) => r1(x.wvp)),
+      wave_direction: series.map((x) => (Number.isFinite(x.wvd) ? Math.round(x.wvd) : null)),
+    },
+    daily: null,
+  };
 }
 
 function naiveLocal(ms) {

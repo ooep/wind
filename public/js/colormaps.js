@@ -153,9 +153,31 @@ export const CIN = makeScale([
   [-50, 235, 180, 225, 215], [0, 235, 245, 250, 0],
 ]);
 
+/* 有效波高 m(深海底色 → 风暴白沫) */
+export const WAVES = makeScale([
+  [0, 8, 34, 74, 0], [0.3, 16, 70, 120, 200], [1, 22, 118, 168, 215],
+  [2, 46, 168, 196, 228], [3, 96, 204, 150, 232], [4, 226, 216, 96, 238],
+  [6, 240, 140, 54, 242], [9, 224, 58, 58, 246], [12, 176, 34, 118, 250],
+]);
+
+/* 主波周期 s(短周期风浪 → 长周期涌浪) */
+export const WPER = makeScale([
+  [0, 32, 48, 96, 0], [3, 48, 88, 148, 200], [5, 40, 132, 176, 218],
+  [7, 62, 178, 182, 228], [9, 128, 210, 148, 232], [11, 226, 214, 106, 236],
+  [14, 240, 148, 66, 240], [17, 226, 66, 74, 244], [20, 168, 40, 128, 248],
+]);
+
+/* US AQI(EPA 分级) */
+export const AQI = makeScale([
+  [0, 90, 190, 110, 225], [50, 130, 208, 130, 228], [100, 244, 232, 100, 232],
+  [150, 240, 148, 66, 236], [200, 230, 72, 62, 240], [300, 168, 60, 170, 244],
+  [400, 128, 34, 56, 248], [500, 110, 26, 40, 250],
+]);
+
 export const COLORMAPS = {
   wind: WIND, temp: TEMP, msl: MSL, precip: PRECIP, cloud: CLOUD, rh: RH,
   feels: TEMP, dew: DEW, ptype: PTYPE, cape: CAPE, snow: SNOWCM, vis: VIS,
   gust: WIND, pwat: PWAT, cwat: CWAT, lcdc: CLOUD, mcdc: CLOUD, hcdc: CLOUD,
   newsnow: NEWSNOW, soilw: SOILW, soilt: TEMP, frzlvl: FRZLVL, cin: CIN,
+  wvh: WAVES, wvp: WPER, aqi: AQI,
 };

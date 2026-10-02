@@ -30,11 +30,13 @@ const RADAR_API = 'https://api.rainviewer.com/public/weather-maps.json';
 const gfs = require('./server/gfs');
 /* nwp = 更多自建模式引擎:GEFS 控制成员、ECMWF IFS Open Data */
 const nwp = require('./server/nwp');
+const waves = require('./server/waves');
 /* tropical = NHC 活动飓风(自研 zip/shapefile 解析);obs = 全球 METAR 站点实况 */
 const tropical = require('./server/tropical');
 const obs = require('./server/obs');
+const aq = require('./server/aq');
 
-const MODELS = new Set(['gfs_raw', 'gefs_raw', 'aifs_raw', 'ecmwf_raw', 'best_match', 'gfs_seamless', 'icon_seamless', 'ecmwf_ifs025']);
+const MODELS = new Set(['gfs_raw', 'gefs_raw', 'aifs_raw', 'ecmwf_raw', 'waves_raw', 'best_match', 'gfs_seamless', 'icon_seamless', 'ecmwf_ifs025']);
 /* 可选:设置 OPEN_METEO_API_KEY 环境变量以获得更高请求配额(免费注册:https://open-meteo.com/en/docs) */
 const API_KEY = process.env.OPEN_METEO_API_KEY || '';
 const HOURLY_VARS = [
@@ -432,6 +434,16 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, data, 600);
     }
 
+    if (p === '/api/aq') {
+      const key = 'aq:latest';
+      const cached = memGet(key);
+      if (cached) return sendJSON(res, 200, cached, 600);
+      if (!aq._inflight) aq._inflight = aq.fetchAq().finally(() => { delete aq._inflight; });
+      const data = await aq._inflight;
+      memSet(key, data, 2 * 3600_000);
+      return sendJSON(res, 200, data, 600);
+    }
+
     if (p === '/api/gfs/status') {
       return sendJSON(res, 200, { gfs: gfs.status(), ...nwp.status() });
     }
@@ -455,6 +467,10 @@ const server = http.createServer(async (req, res) => {
         const grid = await nwp.ENGINES[model].rawGrid(w, s, east, n, step);
         return sendJSON(res, 200, { ...grid, fetchMs: Date.now() - t0 });
       }
+      if (model === 'waves_raw') {
+        const grid = await waves.engine.rawGrid(w, s, east, n, step);
+        return sendJSON(res, 200, { ...grid, fetchMs: Date.now() - t0 });
+      }
       const grid = await fetchGrid(model, w, s, east, n, step);
       return sendJSON(res, 200, { ...grid, fetchMs: Date.now() - t0 });
     }
@@ -471,6 +487,10 @@ const server = http.createServer(async (req, res) => {
       }
       if (model === 'gefs_raw' || model === 'ecmwf_raw' || model === 'aifs_raw') {
         const data = await nwp.ENGINES[model].rawPoint(lat, lon);
+        return sendJSON(res, 200, data, 600);
+      }
+      if (model === 'waves_raw') {
+        const data = await waves.engine.rawPoint(lat, lon);
         return sendJSON(res, 200, data, 600);
       }
       const key = `pt:${model}:${lat.toFixed(2)}:${lon.toFixed(2)}:${Math.floor(Date.now() / 600e3)}`;

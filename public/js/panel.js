@@ -1,6 +1,7 @@
 /* 点位预报面板:当前实况 + 48 小时图表 + 7 天列表 */
 import { fetchPoint, fetchPointModel, fetchMarine } from './api.js';
 import { nearestAirports, fetchObs, fetchTaf, fetchAirgram, fetchAirQuality, aqiBand, uvBand } from './pointdata.js';
+import { TEMP } from './colormaps.js';
 import { fmtTime, fmtHourLocal, weekday, fmtDay } from './util.js';
 
 const WMO = {
@@ -99,6 +100,8 @@ export class ForecastPanel {
   _render() {
     const d = this.data;
     const cur = d.current;
+    /* 海浪模式:无大气点位要素,走海洋专用视图 */
+    if (cur.temperature_2m == null || Number.isNaN(cur.temperature_2m)) return this._renderMarine(d);
     const [desc, icon] = wmo(cur.weather_code);
     this.title.textContent = `${desc} · ${Math.round(toDeg(cur.temperature_2m))}°`;
     if (Number.isFinite(d.elevation)) {
@@ -151,6 +154,41 @@ export class ForecastPanel {
     });
     this.loading.style.display = 'none';
     this.content.hidden = false;
+    this._renderTab();
+  }
+
+  /* 海浪模式的点位面板:当前波况 + Open-Meteo 海浪详情 */
+  _renderMarine(d) {
+    const cur = d.current || {};
+    const num = (v) => Number.isFinite(v) && v != null;
+    const wh = num(cur.wave_height) ? cur.wave_height : NaN;
+    const wp = num(cur.wave_period) ? cur.wave_period : NaN;
+    const wd = num(cur.wave_direction) ? cur.wave_direction : NaN;
+    this.title.textContent = `海浪 · ${num(wh) ? wh.toFixed(1) + ' m' : '—'}`;
+    this.content.innerHTML = `
+      <div class="pcur">
+        <div class="pcur-icon">🌊</div>
+        <div>
+          <div class="pcur-temp">${num(wh) ? wh.toFixed(1) : '—'}<sup>m</sup></div>
+          <div class="pcur-desc">有效波高${num(wp) ? ` · 主波周期 ${wp.toFixed(1)} s` : ''}${num(wd) ? ` · ${compass(wd)}来向` : ''}</div>
+        </div>
+      </div>
+      <div class="pgrid">
+        <div class="pstat"><b>${num(wh) ? wh.toFixed(1) + ' m' : '—'}</b><span>波高</span></div>
+        <div class="pstat"><b>${num(wp) ? wp.toFixed(1) + ' s' : '—'}</b><span>主波周期</span></div>
+        <div class="pstat"><b>${num(wd) ? Math.round(wd) + '°' : '—'}</b><span>主波来向</span></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-dim);margin:6px 0 10px;text-align:center">海浪模式无大气点位要素 · 下方为该点海浪详情</div>
+      <div class="ptabs"><button data-tab="wave" class="active">海浪详情</button></div>
+      <div id="ptab-body"></div>
+      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">数据源:${modelLabel(d)},格点插值到该点坐标</div>
+    `;
+    this.content.querySelectorAll('.ptabs button').forEach((b) => {
+      b.addEventListener('click', () => this._renderTab());
+    });
+    this.loading.style.display = 'none';
+    this.content.hidden = false;
+    this.tab = 'wave';
     this._renderTab();
   }
 
@@ -290,7 +328,7 @@ export class ForecastPanel {
     const wind = d.hourly.wind_speed_10m.slice(start, end);
     const codes = d.hourly.weather_code.slice(start, end);
 
-    const cw = 318, ch = 190, padL = 30, padR = 34, padT = 18, padB = 26;
+    const cw = 318, ch = 184, padL = 30, padR = 34, padT = 18, padB = 24;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const cv = document.createElement('canvas');
     cv.width = cw * dpr; cv.height = ch * dpr;
@@ -350,17 +388,19 @@ export class ForecastPanel {
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.font = '9px -apple-system, sans-serif';
     for (let i = 0; i < slice.length; i += 8) {
-      ctx.fillText(fmtHourLocal(slice[i]), x(i), ch - 12);
+      ctx.fillText(fmtHourLocal(slice[i]), x(i), ch - 8);
     }
-    // 图例
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffb454'; ctx.fillText('— 温度', padL, ch - 2);
-    ctx.fillStyle = 'rgba(110,220,255,0.85)'; ctx.fillText('--- 风速 m/s', padL + 52, ch - 2);
-    ctx.fillStyle = 'rgba(80,150,255,0.8)'; ctx.fillText('▮ 降水 mm', padL + 140, ch - 2);
 
     const wrap = document.createElement('div');
     wrap.className = 'pchart-wrap';
     wrap.appendChild(cv);
+    // 图例独立成 HTML 行,不与画布内时间标签争位
+    const lg = document.createElement('div');
+    lg.className = 'pchart-legend';
+    lg.innerHTML = '<span><i style="background:#ffb454"></i>温度</span>'
+      + '<span><i style="background:rgba(110,220,255,0.85)"></i>风速 m/s</span>'
+      + '<span><i style="background:rgba(80,150,255,0.8)"></i>降水 mm</span>';
+    wrap.appendChild(lg);
     body.innerHTML = '';
     body.appendChild(wrap);
   }
@@ -556,12 +596,13 @@ export class ForecastPanel {
         ctx.fillText(weekday(ms[i]), Math.min(x(i) + 14, cw - padR - 10), padT + 8);
       }
     }
-    // 风向杆带(底部,每 2 列)
+    // 风向杆带(底部;间距自适应序列密度,1h/3h 步长均可用)
     const wBand = y0 + 8, wH = 30;
+    const arrStride = Math.max(2, Math.round(N / 26));
     ctx.strokeStyle = 'rgba(140,200,255,0.25)';
     ctx.beginPath(); ctx.moveTo(padL, wBand - 4); ctx.lineTo(cw - padR, wBand - 4); ctx.stroke();
     ctx.font = '8.5px -apple-system, sans-serif';
-    for (let i = 0; i < N; i += 2) {
+    for (let i = 0; i < N; i += arrStride) {
       if (WD[i] == null || WS[i] == null) continue;
       const cx = x(i), cy = wBand + wH / 2 - 6;
       const rad = ((WD[i] + 180) % 360) * Math.PI / 180; // 来向 → 箭头指向去向
@@ -570,7 +611,7 @@ export class ForecastPanel {
       ctx.beginPath(); ctx.moveTo(0, 4); ctx.lineTo(0, -4); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(-2.4, -1); ctx.moveTo(0, -4); ctx.lineTo(2.4, -1); ctx.stroke();
       ctx.restore();
-      if (i % 4 === 0) {
+      if (i % (arrStride * 2) === 0) {
         ctx.fillStyle = 'rgba(170,215,255,0.85)';
         ctx.fillText(String(Math.round(WS[i])), cx, wBand + wH);
       }
@@ -579,7 +620,8 @@ export class ForecastPanel {
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = '9px -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    for (let i = 0; i < N; i += 4) ctx.fillText(fmtHourLocal(ms[i]), x(i), ch - 3);
+    const lblStride = Math.max(4, Math.ceil(N / 9));
+    for (let i = 0; i < N; i += lblStride) ctx.fillText(fmtHourLocal(ms[i]), x(i), ch - 3);
     // 图例
     ctx.textAlign = 'left';
     ctx.font = '9px -apple-system, sans-serif';

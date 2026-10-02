@@ -22,6 +22,9 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid rgba(69, 196, 255, 0.6); outline-offset: 1px;
+}
 html, body { height: 100%; overflow: hidden; }
 body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; -webkit-font-smoothing: antialiased; }
 
@@ -117,7 +120,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 /* ---------- 图层栏(左) ---------- */
 #layerbar {
   position: fixed; left: 14px; top: 76px; z-index: 1000;
-  width: 116px; max-height: calc(100vh - 92px); overflow-y: auto;
+  width: 116px; max-height: calc(100vh - 184px); overflow-y: auto;
   background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 7px; box-shadow: var(--shadow);
@@ -246,9 +249,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 #tl-step button#step-now { width: auto; padding: 0 10px; font-size: 11.5px; }
 #tl-step button:hover { border-color: rgba(69, 196, 255, 0.5); color: var(--accent); }
 
-/* ---------- 图例(位于图层栏底部,随面板流动,不与时间轴争位) ---------- */
+/* ---------- 图例(钉在图层栏底部,内容超长滚动时也保持可见) ---------- */
 #legend {
+  position: sticky; bottom: 0; z-index: 1;
   margin: 2px 2px 0; padding: 9px 5px 3px;
+  background: rgba(13, 17, 24, 0.92);
   border-top: 1px solid var(--border);
 }
 #legend-title { font-size: 10.5px; color: var(--text-dim); margin-bottom: 6px; }
@@ -332,15 +337,24 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 .pstat { background: var(--panel-soft); border-radius: var(--radius-sm); padding: 8px 10px; }
 .pstat b { display: block; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .pstat span { font-size: 10.5px; color: var(--text-faint); }
-.ptabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.ptabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
 .ptabs button {
-  flex: 1; background: var(--panel-soft); border: 1px solid transparent;
-  color: var(--text-dim); border-radius: 8px; padding: 6px; font-size: 12.5px; cursor: pointer; font-family: var(--font);
-  transition: all 0.15s;
+  background: var(--panel-soft); border: 1px solid transparent;
+  color: var(--text-dim); border-radius: 8px; padding: 6px 2px; font-size: 12px; cursor: pointer; font-family: var(--font);
+  transition: all 0.15s; white-space: nowrap; text-align: center;
 }
 .ptabs button.active { color: var(--text); border-color: rgba(69, 196, 255, 0.45); background: rgba(69, 196, 255, 0.1); }
 .pchart-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 6px; }
 .pchart-wrap canvas { display: block; width: 100%; height: auto; }
+.pchart-legend {
+  display: flex; gap: 14px; padding: 7px 11px;
+  border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--text-dim);
+}
+.pchart-legend i {
+  display: inline-block; width: 12px; height: 3px; border-radius: 2px;
+  margin-right: 5px; vertical-align: 2px;
+}
 .psun { font-size: 11px; color: var(--text-faint); text-align: center; margin-top: 4px; }
 .pdays { display: flex; flex-direction: column; gap: 4px; }
 .pday {
@@ -409,27 +423,19 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
 }
 
 /* ---------- 自适应 ---------- */
-@media (max-width: 1100px) {
-  #searchbox { width: 200px; }
-  #settings select { max-width: 104px; }
-}
-
-@media (max-width: 820px) {
-  #brand { padding: 0 11px; }
-  #brand div { display: none; }             /* 只留 logo */
-  #searchbox { width: min(300px, calc(100vw - 190px)); }
-
-  /* 设置收进齿轮 */
+/* ≤1000:设置收进右下角齿轮抽屉(避免顶栏与设置栏在窄窗口相撞) */
+@media (max-width: 1000px) {
   #settings {
     top: auto; right: 10px; bottom: 74px;
-    flex-direction: column; align-items: stretch; gap: 8px;
+    flex-flow: row wrap; align-items: center; gap: 8px;
     height: auto; padding: 12px; width: 218px;
     border-radius: 14px;
     opacity: 0; pointer-events: none; transform: translateY(8px) scale(0.98);
-    transition: all 0.18s ease;
+    transition: opacity 0.18s ease, transform 0.18s ease;
   }
   #settings.open { opacity: 1; pointer-events: auto; transform: none; }
-  #settings .ctl { justify-content: space-between; }
+  #settings .ctl { flex: 1 1 100%; justify-content: space-between; }
+  #settings > button { flex: none; }
   #settings select { flex: 1; max-width: 130px; }
   #settings-toggle {
     display: flex; align-items: center; justify-content: center;
@@ -440,13 +446,23 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
     box-shadow: var(--shadow); cursor: pointer;
   }
   #settings-toggle.active { border-color: rgba(69, 196, 255, 0.5); color: var(--accent); }
+  /* 居中时间轴收窄,给右下角齿轮留位 */
+  #timelinebar { width: min(720px, calc(100vw - 148px)); }
+}
+
+@media (max-width: 820px) {
+  #brand { padding: 0 11px; }
+  #brand div { display: none; }             /* 只留 logo */
+  #searchbox { width: min(300px, calc(100vw - 172px)); }
 
   /* 图层栏:横向条 */
   #layerbar {
-    top: auto; bottom: 70px; left: 10px; right: 64px; width: auto;
+    top: auto; bottom: 74px; left: 10px; right: 64px; width: auto;
     display: flex; align-items: center; gap: 2px; padding: 5px 7px;
     overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  #layerbar::-webkit-scrollbar { display: none; }
   #layerbar .sep { width: 1px; height: 26px; margin: 0 4px; flex: none; }
   /* 图层分组:横向 chip,点开内联展开该组图层 */
   #layer-buttons { display: flex; gap: 2px; align-items: center; }
@@ -471,19 +487,19 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
   #legend { display: none !important; }
 
   #panel {
-    left: 10px; right: 10px; width: auto; top: auto; bottom: 118px; max-height: 46vh;
+    left: 10px; right: 10px; width: auto; top: auto; bottom: 130px; max-height: 44vh;
   }
   #topbar { left: 10px; top: 10px; }
   #attrib { display: none; }
 }
 
 @media (max-width: 480px) {
-  #timelinebar { width: calc(100vw - 20px); left: 10px; gap: 8px; padding: 8px 10px; }
+  /* 时间轴给右下角齿轮留位,不再全宽压住齿轮 */
+  #timelinebar { width: calc(100vw - 76px); left: 10px; gap: 8px; padding: 8px 10px; }
   #time-display { width: 84px; }
   #time-main { font-size: 13px; }
   #tl-step { display: none; }               /* 移动端用长按/拖动代替步进 */
-  #searchbox { width: calc(100vw - 120px); }
-  #layerbar { bottom: 66px; right: 62px; }
+  #layerbar { bottom: 74px; right: 62px; }
 }
 
 /* ---------- 收藏地点(顶栏按钮 + 下拉) ---------- */
@@ -497,7 +513,7 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
 }
 #fav-btn:hover { color: #ffd257; border-color: rgba(255, 210, 87, 0.4); }
 #fav-list {
-  position: fixed; top: 64px; right: 14px; z-index: 1100;
+  position: fixed; top: 64px; right: 14px; z-index: 1300;
   width: 240px; max-height: min(420px, 60vh); overflow-y: auto;
   background: var(--panel); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
@@ -526,7 +542,7 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
 #map.measuring { cursor: crosshair !important; }
 #map.measuring .leaflet-interactive { cursor: crosshair !important; }
 #measure-bar {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: 84px; z-index: 1000;
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 84px; z-index: 1150;
   display: flex; align-items: center; gap: 8px;
   background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(69, 196, 255, 0.4); border-radius: 12px;
@@ -632,3 +648,36 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
   #sat-channel { max-width: 160px; }
 }
 #overlay-root canvas#lightning-canvas { z-index: 5; }
+
+/* ---------- 3D 地球视图 ---------- */
+#globe-wrap {
+  position: fixed; inset: 0; z-index: 2000;
+  background: #05090f; display: none;
+}
+#globe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#globe-canvas:active { cursor: grabbing; }
+#globe-exit {
+  position: absolute; top: 16px; right: 16px; z-index: 5;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: 10px; padding: 8px 14px; font-size: 12.5px; font-family: var(--font);
+  cursor: pointer; transition: all 0.15s;
+}
+#globe-exit:hover { color: var(--accent); border-color: rgba(69, 196, 255, 0.5); }
+#globe-hint {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  font-size: 11.5px; color: var(--text-faint); font-family: var(--font);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 14px; pointer-events: none;
+}
+#globe-legend {
+  position: absolute; left: 16px; bottom: 18px; z-index: 5;
+  flex-direction: column; gap: 4px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 9px 12px; min-width: 150px;
+  font-family: var(--font); backdrop-filter: blur(8px);
+}
+#globe-legend b { font-size: 11.5px; color: var(--text-dim); font-weight: 600; }
+#globe-legend i { display: block; height: 9px; border-radius: 4px; }
+#globe-legend span { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-faint); }
+#globe-btn { background: none; border: none; color: var(--text-dim); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+#globe-btn:hover, #globe-btn.active { color: var(--accent); background: var(--panel-soft); }
