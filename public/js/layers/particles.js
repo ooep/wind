@@ -1,6 +1,9 @@
-/* 风场粒子动画层(nullschool 风格):拖尾轨迹 + 速度着色 */
+/* 风场粒子动画层(nullschool 风格):拖尾轨迹 + 速度着色。
+ * 海浪档(wave):u/v 用外推场延续到海岸线,并以 land-50m 光栅位图做门控,
+ * 粒子游到岸线以内立即重生 —— 岸外全流动、岸内零粒子。 */
 import { getView } from '../util.js';
 import { WIND } from '../colormaps.js';
+import { loadLand } from '../basemap.js?v=2';
 
 const MAX_SPEED_PX = 5.5;   // 单帧位移上限(px),防止视觉过快
 const BASE_K = 0.055;        // z=2 时的 px/(m/s·帧) 系数
@@ -26,9 +29,66 @@ export class ParticleLayer {
     this.profile = PROFILES.default;
     this._raf = null;
     this._needsClear = false;
+    this.landRings = null;
+    this.landBits = null;      // 缩小版陆地位图 alpha 通道(1/4 分辨率)
+    this.landW = 0; this.landH = 0;
+    this._landRaf = 0;
     this._resize();
-    map.on('resize zoomend', () => { this._resize(); this._clear(); });
-    map.on('zoom move', () => { this._needsClear = true; });
+    map.on('resize zoomend', () => { this._resize(); this._clear(); this._scheduleLand(); });
+    map.on('zoom move', () => { this._needsClear = true; this._scheduleLand(); });
+    loadLand().then((d) => { this.landRings = d.rings; this._scheduleLand(); })
+      .catch((e) => console.error('[particles] 陆地位图数据失败:', e.message));
+  }
+
+  /* 陆地位图:把 land-50m 多边形按当前视图光栅化到 1/4 分辨率画布,粒子 O(1) 查询 */
+  _scheduleLand() {
+    if (this._landRaf) return;
+    this._landRaf = requestAnimationFrame(() => { this._landRaf = 0; this._buildLandBits(); });
+  }
+
+  _buildLandBits() {
+    if (!this.landRings) return;
+    const SC = 4;
+    const W = Math.max(1, Math.round(this.w / SC)), H = Math.max(1, Math.round(this.h / SC));
+    const cv = this._landCv || (this._landCv = document.createElement('canvas'));
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const view = getView(this.map);
+    ctx.setTransform(1 / SC, 0, 0, 1 / SC, 0, 0);
+    ctx.fillStyle = '#fff';
+    const c0 = view.containerToLatLng(0, 0), c1 = view.containerToLatLng(view.w, view.h);
+    const c2 = view.containerToLatLng(view.w, 0), c3 = view.containerToLatLng(0, view.h);
+    let minLon = Math.min(c0.lng, c1.lng, c2.lng, c3.lng);
+    let maxLon = Math.max(c0.lng, c1.lng, c2.lng, c3.lng);
+    if (maxLon - minLon >= 359) { minLon = -180; maxLon = 180; }
+    const minLat = Math.min(c0.lat, c1.lat, c2.lat, c3.lat);
+    const maxLat = Math.max(c0.lat, c1.lat, c2.lat, c3.lat);
+    for (const ring of this.landRings) {
+      const [rLon0, rLat0, rLon1, rLat1] = ring.b;
+      if (rLon1 < minLon - 1 || rLon0 > maxLon + 1 || rLat1 < minLat - 1 || rLat0 > maxLat + 1) continue;
+      ctx.beginPath();
+      const r = ring.r;
+      for (let i = 0; i < r.length; i += 2) {
+        const pt = view.latLngToContainer(r[i + 1], r[i]);
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    const img = ctx.getImageData(0, 0, W, H);
+    this.landBits = img.data;
+    this.landW = W; this.landH = H; this.landSC = SC;
+  }
+
+  /* 岸线门控:屏幕坐标是否落在陆地内 */
+  _isLand(x, y) {
+    if (!this.landBits) return false;
+    const ix = (x / this.landSC) | 0, iy = (y / this.landSC) | 0;
+    if (ix < 0 || iy < 0 || ix >= this.landW || iy >= this.landH) return false;
+    return this.landBits[(iy * this.landW + ix) * 4 + 3] > 128;
   }
 
   /* 动效档位切换(海浪模式换长拖尾低密度) */
@@ -38,6 +98,7 @@ export class ParticleLayer {
     this.profile = next;
     this._resize(); // 按新密度重算粒子数
     this._clear();
+    this._scheduleLand();
   }
 
   _resize() {
@@ -131,8 +192,10 @@ export class ParticleLayer {
         this._spawn(p);
       }
       const ll = view.containerToLatLng(p.x, p.y);
-      const uv = grid.sampleUV(ll.lng, ll.lat, fr);
+      let uv = grid.sampleUV(ll.lng, ll.lat, fr);
+      if (!uv && this.profile === PROFILES.wave) uv = grid.sampleUVExt(ll.lng, ll.lat, fr);
       if (!uv) { p.age = p.ttl + 1; continue; }
+      if (this.profile === PROFILES.wave && this._isLand(p.x, p.y)) { p.age = p.ttl + 1; continue; }
       const [u, v] = uv;
       let dx = u * k, dy = -v * k;
       const mag = Math.hypot(dx, dy);
@@ -142,10 +205,12 @@ export class ParticleLayer {
       const c = (this.colorCmap || WIND).color(spd);
       // 略微提亮,保证深色底图上可见
       const r = Math.min(255, c[0] + 45), g = Math.min(255, c[1] + 45), b = Math.min(255, c[2] + 45);
+      const nx = p.x + dx, ny = p.y + dy;
+      if (this.profile === PROFILES.wave && this._isLand(nx, ny)) { p.age = p.ttl + 1; continue; }
       ctx.strokeStyle = `rgba(${r},${g},${b},0.9)`;
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
-      p.x += dx; p.y += dy;
+      p.x = nx; p.y = ny;
       ctx.lineTo(p.x, p.y);
       ctx.stroke();
     }
