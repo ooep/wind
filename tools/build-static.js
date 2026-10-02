@@ -42,7 +42,7 @@ const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10 }; // 烘焙端派�
 function varScale(model, vk) {
   const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
   if (model === 'ocean_raw') return base === 'sst' ? 100 : 1;
-  if (model === 'gfs_raw') {
+  if (model === 'gfs_raw' || model === 'gfs_snow') {
     if (DERIVED_SCALE[base]) return DERIVED_SCALE[base];
     const cfg = gfs.surfaceEngine.varCfg[base];
     if (cfg) return cfg.scale;
@@ -93,7 +93,7 @@ async function main() {
   const index = {};
   for (const model of MODELS) {
     let engine;
-    if (model === 'gfs_raw') engine = gfs.surfaceEngine;
+    if (model === 'gfs_raw' || model === 'gfs_snow') engine = gfs.surfaceEngine;
     else if (model === 'waves_raw') engine = waves.engine;
     else engine = require('../server/nwp').ENGINES[model];
     if (!engine) { console.error(`未知模型 ${model}`); process.exit(1); }
@@ -105,6 +105,52 @@ async function main() {
     const outDir = path.join(OUT, model, runKey);
     fs.mkdirSync(outDir, { recursive: true });
     console.log(`\n[${model}] run ${runKey}: 生成静态数据 → ${outDir}`);
+
+    // gfs_snow 高分辨雪包:0.5° 原生分辨率只烘雪变量(2.5° 的雪边缘块状难看)。
+    // 纬度带 20-90°N(全球雪基本都在带内)+ 3 小时帧 + 上限 +168h,控制单文件体积。
+    if (model === 'gfs_snow') {
+      const SNOW_VARS = ['snowd', 'newsnow'];
+      const SNOW_S_LAT = 20, SNOW_MAX_H = 168;
+      const raw = await engine.gridCore(-180, SNOW_S_LAT, 180, 90, 0.5, SNOW_VARS);
+      const msAll = raw.times.map((t) => Date.parse(t + ':00Z'));
+      const keep = [];
+      for (let t = 0; t < msAll.length; t++) {
+        const h = (msAll[t] - msAll[0]) / 3600e3;
+        if (h <= SNOW_MAX_H && Math.round(h) % 3 === 0) keep.push(t);
+      }
+      const times = keep.map((t) => raw.times[t]);
+      const meta = {
+        model, runKey,
+        times,
+        generated: Math.floor(Date.now() / 1000),
+        format: 'per-var',
+        grid: { ni: raw.lons.length, nj: raw.lats.length, lon0: raw.lons[0], dlon: 0.5, lat0: raw.lats[0], dlat: 0.5 },
+        vars: {},
+      };
+      let total = 0;
+      for (const vk of SNOW_VARS) {
+        const bin = Buffer.from(raw.vars[vk], 'base64');
+        const all = new Float32Array(bin.buffer, bin.byteOffset, bin.byteLength / 4);
+        const nP = raw.lons.length * raw.lats.length;
+        const out = new Float32Array(keep.length * nP);
+        keep.forEach((t, ki) => out.set(all.subarray(t * nP, (t + 1) * nP), ki * nP));
+        const scale = varScale(model, vk);
+        const q = new Int16Array(out.length);
+        for (let i = 0; i < out.length; i++) {
+          const v = out[i];
+          q[i] = Number.isNaN(v) ? -32768 : Math.max(-32767, Math.min(32767, Math.round(v * scale)));
+        }
+        const file = path.join(outDir, `v_${vk}.json`);
+        fs.writeFileSync(file, JSON.stringify({ scale, data: Buffer.from(q.buffer).toString('base64') }));
+        meta.vars[vk] = { scale, file: `v_${vk}.json` };
+        total += fs.statSync(file).size;
+        console.log(`  v_${vk}.json ${(fs.statSync(file).size / 1e6).toFixed(2)} MB`);
+      }
+      fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta));
+      console.log(`  ${SNOW_VARS.length} 个雪变量 × ${keep.length} 帧(0.5°,${SNOW_S_LAT}-90°N),共 ${(total / 1e6).toFixed(1)} MB`);
+      index[model] = { runKey, meta: 'meta.json', format: 'per-var' };
+      continue;
+    }
 
     // 全球粗网格(2.5°):Int16 + 每变量 scale(体积较 Float32 减半,浏览器解码快)
     const coarse = await rawGridOf(-180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);

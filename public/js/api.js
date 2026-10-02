@@ -198,6 +198,8 @@ async function staticGlobalGrid(model, entry) {
 /* 静态模式:点预报由本地格点插值合成(与 /api/point 响应同构);needs 可精简(对比 tab 只需温/风) */
 async function staticPoint(lat, lon, model, needs) {
   if (model === 'waves_raw') return staticPointWaves(lat, lon, model);
+  /* 高分辨雪包只含雪变量,点位预报常规要素沿用地面 GFS 包 */
+  if (model === 'gfs_snow') model = 'gfs_raw';
   const grid = await staticModelGrid(model, needs || ['temp', 'rh', 'precip', 'cloud', 'msl', 'u', 'v', 'gust']);
   const times = grid.times; // Grid 构造时已解析为毫秒
   const fr = { i0: 0, i1: 0, f: 0 };

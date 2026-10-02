@@ -243,6 +243,48 @@ export class Grid {
     return [u, v];
   }
 
+  /* 外推场 u/v 采样(海洋粒子用):近岸 NaN 格点取最近海值,与填色层的外推一致,
+   * 使粒子动画延续到海岸线;配合调用方的陆地位图门控防止粒子爬上陆地。 */
+  sampleUVExt(lon, lat, fr) {
+    const u0 = this.extendedVar('u', fr.i0);
+    if (!u0) return null;
+    let x = (lon - this.lon0) / this.step;
+    let i0, i1;
+    if (this.wrapLon) {
+      x = ((x % this.cols) + this.cols) % this.cols;
+      i0 = Math.floor(x) % this.cols;
+      i1 = (i0 + 1) % this.cols;
+    } else {
+      x = clamp(x, 0, this.cols - 1e-4);
+      i0 = Math.floor(x); i1 = Math.min(i0 + 1, this.cols - 1);
+    }
+    let y = clamp((this.lat0 - lat) / this.step, 0, this.rows - 1e-4);
+    const j0 = Math.floor(y); const j1 = Math.min(j0 + 1, this.rows - 1);
+    const tx = x - i0, ty = y - j0;
+    const C = this.cols, r0 = j0 * C, r1 = j1 * C;
+    const su = (arr, base) => {
+      const u00 = arr[base + r0 + i0], u10 = arr[base + r0 + i1];
+      const u01 = arr[base + r1 + i0], u11 = arr[base + r1 + i1];
+      if (Number.isNaN(u00 + u10 + u01 + u11)) return NaN;
+      return lerp(lerp(u00, u10, tx), lerp(u01, u11, tx), ty);
+    };
+    const o0 = 0, o1 = 0; // 外推数组为单帧布局
+    const v0 = this.extendedVar('v', fr.i0);
+    if (!v0) return null;
+    let u = su(u0, o0), v = su(v0, o0);
+    if (Number.isNaN(u) || Number.isNaN(v)) return null;
+    if (fr.i0 !== fr.i1) {
+      const u1 = this.extendedVar('u', fr.i1), v1 = this.extendedVar('v', fr.i1);
+      if (u1 && v1) {
+        const u2 = su(u1, o1), v2 = su(v1, o1);
+        if (!Number.isNaN(u2) && !Number.isNaN(v2)) {
+          u = lerp(u, u2, fr.f); v = lerp(v, v2, fr.f);
+        }
+      }
+    }
+    return [u, v];
+  }
+
   /* 等压线用的原始网格值(取最近整点帧) */
   rawAt(varName, i, j, frame) {
     return this.vars[varName][frame * this.P + j * this.cols + i];

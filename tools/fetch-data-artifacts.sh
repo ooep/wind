@@ -35,6 +35,7 @@ fetch_model() {
 }
 
 fetch_model "update-gfs.yml"   "gfs_raw"
+fetch_model "update-gfs.yml"   "gfs_snow"
 fetch_model "update-gefs.yml"  "gefs_raw"
 fetch_model "update-ecmwf.yml" "ecmwf_raw"
 fetch_model "update-aifs.yml"  "aifs_raw"

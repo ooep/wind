@@ -458,7 +458,9 @@ class GfsEngine {
   }
 
   /* 采样整个视场 → { times, lats, lons, vars } */
-  async gridCore(w, s, e, n, stepDeg) {
+  /* 采样整个视场 → { times, lats, lons, vars }。varFilter 可只采样部分变量
+   * (gfs_snow 高分辨烘焙用:0.5° × 全变量会超内存,只取雪变量) */
+  async gridCore(w, s, e, n, stepDeg, varFilter) {
     const run = await this.ensureLoaded();
     const times = run.times;
     const stepOut = stepDeg;
@@ -470,8 +472,9 @@ class GfsEngine {
     const lats = [];
     for (let j = 0; j < rows; j++) lats.push(Number((n - j * stepOut).toFixed(3)));
     const nP = lons.length * lats.length;
+    const vks = varFilter ? this.varKeys.filter((k) => varFilter.includes(k)) : this.varKeys;
     const src = {};
-    for (const vk of this.varKeys) src[vk] = new Float32Array(times.length * nP).fill(NaN);
+    for (const vk of vks) src[vk] = new Float32Array(times.length * nP).fill(NaN);
 
     /* t 外层循环:每个步长的捆包整场只加载一次;若 t 内层,全球网格的
      * 步长数会超出 mem 上限,逐列反复回读磁盘 */
@@ -481,7 +484,7 @@ class GfsEngine {
       for (const lat of lats) {
         for (const lon of lons) {
           const s2 = this.sampleAll(tt.runKey, tt.step, lat, lon);
-          if (s2) for (const vk of this.varKeys) src[vk][t * nP + p] = s2[vk];
+          if (s2) for (const vk of vks) src[vk][t * nP + p] = s2[vk];
           p++;
         }
       }
@@ -490,7 +493,7 @@ class GfsEngine {
     return {
       times: times.map((t) => isoTime(t.ms)),
       lats, lons,
-      vars: Object.fromEntries(this.varKeys.map((vk) => [vk, f32b64(src[vk])])),
+      vars: Object.fromEntries(vks.map((vk) => [vk, f32b64(src[vk])])),
     };
   }
 }

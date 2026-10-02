@@ -10,6 +10,7 @@ import { AqiLayer } from './layers/aqi.js';
 import { BarbLayer } from './layers/barbs.js';
 import { GlobeView } from './globe.js';
 import { SatelliteLayer } from './layers/satellite.js';
+import { SnowCoverLayer } from './layers/snowcover.js';
 import { LightningLayer } from './layers/lightning.js';
 import { TropicalLayer } from './layers/tropical.js';
 import { StationLayer } from './layers/stations.js';
@@ -94,8 +95,8 @@ const LAYERS = [
   { id: 'precip72', label: '降水·72h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip72', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ['—', '雨', '冻雨', '雪'][Math.round(v)] || '' },
   { id: 'vis', label: '能见度', unit: 'km', cmap: VIS, variable: 'vis', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
-  { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
-  { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
+  { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_snow'], autoModel: true },
+  { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_snow'], autoModel: true },
   { id: 'cape', label: '雷暴 CAPE', unit: 'J/kg', cmap: CAPE, variable: 'cape', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
@@ -184,6 +185,7 @@ let urlTimer = 0;
 
 const MODEL_LABELS = {
   gfs_raw: 'NOAA GFS 0.5°(AWS 开放数据,原始 GRIB2 自解码)',
+  gfs_snow: 'NOAA GFS 0.5° 高分辨雪包(仅积雪/新雪,AWS 开放数据,原始 GRIB2 自解码)',
   gefs_raw: 'NOAA GEFS 控制成员 0.5°(AWS 开放数据,原始 GRIB2 自解码)',
   ecmwf_raw: 'ECMWF IFS 0.25°(ECMWF Open Data,原始 GRIB2 自解码)',
   aifs_raw: 'ECMWF AIFS 0.25°(AI 模式,ECMWF Open Data,原始 GRIB2 自解码)',
@@ -200,7 +202,7 @@ const state = {
   basemap: urlState.bm || 'vector',
   level: num(urlState.lv, 0),
   opacity: Math.min(1, Math.max(0.35, num(urlState.op, 100) / 100)),
-  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations'].includes(x))),
+  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations', 'snowcover'].includes(x))),
   grid: null,
   gridKey: '',
   fetchingKey: '',
@@ -258,6 +260,7 @@ const satellite = new SatelliteLayer(map);
 const lightning = new LightningLayer(map);
 const tropical = new TropicalLayer(map);
 const stations = new StationLayer(map);
+const snowCover = new SnowCoverLayer(map);
 const aqi = new AqiLayer(map);
 const barbs = new BarbLayer(map);
 const timeline = new Timeline({ onChange: onTimeChange });
@@ -351,6 +354,18 @@ function openGroupOf(layerId) {
 
 async function setLayer(id, silent = false) {
   const def0 = layerById(id);
+  /* 雪包等专用图层:自动切换到提供该图层的模式,免去手动选模式 */
+  if (!layerAvailable(def0, state.model) && def0.autoModel) {
+    state.model = def0.models[0];
+    document.getElementById('model-select').value = state.model;
+    window.__currentModelLabel = MODEL_LABELS[state.model];
+    if (state.level) state.level = 0;
+    clearGridCache();
+    state.grid = null; state.gridKey = '';
+    refreshLayerButtons();
+    panel.refresh();
+    hint(`已切换到 ${MODEL_SHORT[state.model] || state.model} 模式`);
+  }
   if (!layerAvailable(def0, state.model)) {
     toast(def0.models && def0.models.includes('waves_raw')
       ? `「${def0.label}」为海浪图层,请在设置中把模型切换到 NOAA Wave`
@@ -429,6 +444,8 @@ const OVERLAYS = [
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3.4" fill="currentColor"/><path d="M12 4a8 8 0 0 1 7 4.2M12 20a8 8 0 0 1-7-4.2M5.6 8.6A8 8 0 0 1 12 4M18.4 15.4A8 8 0 0 1 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
   { id: 'stations', label: '站点', title: '全球机场/气象站 METAR 实测(NOAA,每小时更新)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M6 6a8.5 8.5 0 0 0 0 12M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>' },
+  { id: 'snowcover', label: '雪盖', title: '雪盖观测:NASA VIIRS NDSI 日产品(卫星反演雪盖范围,每日更新)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3v18M5.5 6.2l13 11.6M5.5 17.8l13-11.6M12 6.5l-1.8-1.8M12 6.5l1.8-1.8M12 17.5l-1.8 1.8M12 17.5l1.8 1.8M5 12H3.2M5 12l-1.3 1.4M5 12 3.7 10.6M19 12h1.8M19 12l1.3 1.4M19 12l-1.3-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' },
 ];
 const overlayBtnBox = document.getElementById('overlay-buttons');
 const satChannelWrap = document.getElementById('sat-channel-wrap');
@@ -454,6 +471,7 @@ function toggleOverlay(id, on, silent) {
   } else if (id === 'lightning') lightning.show(on);
   else if (id === 'tropical') tropical.show(on);
   else if (id === 'stations') stations.show(on);
+  else if (id === 'snowcover') snowCover.show(on);
   document.getElementById(`ov-${id}`)?.classList.toggle('active', on);
   if (!silent) syncUrl();
 }
@@ -593,6 +611,7 @@ function onTimeChange(ms) {
   }
   radar.updateTime(ms);
   satellite.updateTime(ms);
+  snowCover.updateTime(ms);
 }
 
 /* ---------- 光标取值器(悬停读数) ---------- */
@@ -646,7 +665,7 @@ map.on('mouseout movestart', () => { tipEl.hidden = true; });
 
 /* ---------- 设置 ---------- */
 const MODEL_SHORT = {
-  gfs_raw: 'NOAA GFS', gefs_raw: 'NOAA GEFS', ecmwf_raw: 'ECMWF IFS', aifs_raw: 'ECMWF AIFS',
+  gfs_raw: 'NOAA GFS', gfs_snow: 'GFS 雪', gefs_raw: 'NOAA GEFS', ecmwf_raw: 'ECMWF IFS', aifs_raw: 'ECMWF AIFS',
   waves_raw: 'NOAA Wave', ocean_raw: 'OISST 海温',
   best_match: 'OM 最佳匹配', gfs_seamless: 'OM GFS', icon_seamless: 'OM ICON', ecmwf_ifs025: 'OM ECMWF',
 };
@@ -660,7 +679,7 @@ document.getElementById('model-select').addEventListener('change', (e) => {
   if (state.layer === 'gph' && !state.level) state.level = 500;
   /* 模式切换后当前图层不可用 → 自动落到该模式的主图层 */
   if (!layerAvailable(layerById(state.layer), state.model)) {
-    const home = state.model === 'waves_raw' ? 'wvh' : state.model === 'ocean_raw' ? 'sst' : 'wind';
+    const home = state.model === 'waves_raw' ? 'wvh' : state.model === 'ocean_raw' ? 'sst' : state.model === 'gfs_snow' ? 'snow' : 'wind';
     setLayer(home, true);
   } else particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
   particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');

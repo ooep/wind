@@ -45,7 +45,7 @@ jobs:
 
       - name: 生成静态数据包
         run: |
-          node tools/build-static.js --out out/data --models gfs_raw
+          node tools/build-static.js --out out/data --models gfs_raw,gfs_snow
 
       - name: 保存摄取缓存
         uses: actions/cache/save@v4
@@ -68,6 +68,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: data-gfs_raw
-          path: out/data/
+          path: out/data/gfs_raw/
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: 上传高分辨雪包产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-gfs_snow
+          path: out/data/gfs_snow/
           retention-days: 3
           if-no-files-found: error
