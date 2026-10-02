@@ -1,0 +1,37 @@
+name: deploy · Cloudflare Pages
+
+# 纯静态部分部署:main 有前端或静态数据更新即自动组装 _site 并发布到 Cloudflare Pages(免费版)。
+# 与数据 workflow 解耦,部署产物包含最新提交的 dist/data,前端同域加载无 CORS。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/**'
+      - 'dist/data/**'
+      - 'pages-build.sh'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 组装 _site(前端 + dist/data)
+        run: bash pages-build.sh
+
+      - name: 发布到 Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: pages deploy _site --project-name=fengyun
