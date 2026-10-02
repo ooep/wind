@@ -8,10 +8,6 @@ cp -r dist/data/. _site/dist/data/
 cat > _site/_headers <<'EOF'
 /*
   Cache-Control: public, max-age=300
-/dist/data/*
-  Cache-Control: public, max-age=86400
-/dist/data/index.json
-  Cache-Control: no-cache
 EOF
 echo "_site 组装完成:"
 find _site -type f | head -20
