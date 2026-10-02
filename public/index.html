@@ -104,8 +104,8 @@
 </div>
 <button id="settings-toggle" title="设置">⚙</button>
 
-<!-- 右下:模型选择胶囊(Windy 式,常驻于时间轴上方) -->
-<div id="model-pill" title="数值预报模式(自建原始数据管道,无 key 无配额)">
+<!-- 右下:模式选择胶囊(仅当前图层有多个数据模式时显示;单模式图层点开即用,胶囊自动隐藏) -->
+<div id="model-pill" title="当前图层的数值预报模式(自建原始数据管道,无 key 无配额)">
   <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M19.1 4.9l-2.8 2.8M7.7 16.3l-2.8 2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
   <select id="model-select">
     <optgroup label="自建管道">
@@ -187,7 +187,7 @@
       <tr><th>卫星云图图层</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS</a> — 全球真彩(VIIRS,每日)与 GOES-East/West 红外(10.3µm 云顶温度,10 分钟刷新),可与任意主图层叠加并随时间轴回放。</td></tr>
       <tr><th>机场 METAR/TAF</th><td><a href="https://aviationweather.gov/" target="_blank" rel="noopener">aviationweather.gov</a>(NOAA,公有领域)— 全球机场实况报文与航路预报,服务端每小时烘焙;机场库来自 <a href="https://davidmegginson.github.io/ourairports-data/" target="_blank" rel="noopener">OurAirports</a>(公有领域,约 5700 个)。</td></tr>
       <tr><th>空气质量 / UV</th><td>Open-Meteo Air Quality(CAMS 全球)— PM2.5 / PM10 / O₃ / NO₂ / SO₂ / 沙尘 / US AQI / UV 指数,逐小时预报;欧洲另含花粉。</td></tr>
-      <tr><th>空气质量全球场(GEOS-5)</th><td><b>NASA GMAO GEOS-5 FP</b>(OPeNDAP 免账号直读,3 小时步长)— 沙尘 / PM2.5 / PM 总量 / SO₂ / 硫酸盐 / 氨 / 有机碳 / 黑碳 / 硝酸盐地表质量浓度与 CO₂ 地表浓度,与 earth.nullschool 空气质量组同源;模式选择器切「GEOS-5 化学」查看。</td></tr>
+      <tr><th>空气质量全球场(GEOS-5)</th><td><b>NASA GMAO GEOS-5 FP</b>(OPeNDAP 免账号直读,3 小时步长)— 沙尘 / PM2.5 / PM 总量 / SO₂ / 硫酸盐 / 氨 / 有机碳 / 黑碳 / 硝酸盐地表质量浓度与 CO₂ 地表浓度,与 earth.nullschool 空气质量组同源;点击「空气场」分组图层即自动切换到该模式查看。</td></tr>
       <tr><th>极光 / 海温距平 / 风功率密度</th><td><b>极光</b>:NOAA SWPC OVATION Prime(未来 30-90 分钟概率,每 30 分钟更新);<b>海温距平</b>:NOAA OISST v2.1 相对 1991-2020 气候态(nullschool SSTA 同源);<b>风功率密度</b>:由 10m 风场派生 ½ρv³。</td></tr>
       <tr><th>高空剖面</th><td>Open-Meteo 气压层数据(GFS)— 1000→150 hPa 共 11 层的温度/风/云,用于点位「剖面」视图。</td></tr>
       <tr><th>卫星影像</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — NASA 官方 VIIRS/MODIS 真彩影像,每日更新。</td></tr>
@@ -236,6 +236,6 @@
   window.addEventListener('error', (e) => window.__capt.push('ERR ' + e.message + ':' + e.lineno));
 </script>
 <script src="vendor/leaflet/leaflet.js"></script>
-<script type="module" src="js/main.js?v=12"></script>
+<script type="module" src="js/main.js?v=13"></script>
 </body>
 </html>

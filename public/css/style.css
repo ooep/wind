@@ -693,6 +693,8 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
   padding: 0 8px 0 11px; height: 34px; box-shadow: var(--shadow); color: var(--text-dim);
 }
 #model-pill svg { flex: none; opacity: 0.8; }
+/* 图层唯一数据模式时 JS 置 hidden:整颗胶囊隐藏,不占位 */
+#model-pill[hidden] { display: none; }
 #model-pill select {
   background: none; color: var(--text); border: none; outline: none; cursor: pointer;
   font-size: 12px; font-family: var(--font); max-width: 132px; padding-right: 2px;

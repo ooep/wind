@@ -1,7 +1,7 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
 import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, gphCmap } from './colormaps.js';
-import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel } from './api.js';
+import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel, staticAvailReady, isStatic } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
 import { IsobarLayer } from './layers/isobars.js';
@@ -193,16 +193,15 @@ function needsFor(def) {
 
 // 支持气压层切换的图层(风/风向杆/温/湿/位势高度)
 const LEVEL_LAYERS = new Set(['wind', 'barbs', 'temp', 'humidity', 'gph']);
-// 海浪/海温模式的图层白名单:该模式仅提供各自要素
-const WAVE_ONLY = new Set(['wvh', 'wvp']);
-const OCEAN_ONLY = new Set(['sst', 'ssta']);
-const CHEM_ONLY = new Set(['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f']);
-function layerAvailable(def, model) {
-  if (def.models) return def.models.includes(model);
-  if (model === 'waves_raw') return WAVE_ONLY.has(def.id);
-  if (model === 'ocean_raw') return OCEAN_ONLY.has(def.id);
-  if (model === 'chem_raw') return CHEM_ONLY.has(def.id);
-  return true;
+/* 图层的数据模式候选(按优先级):显式声明 models 的图层用其清单;
+ * 通用要素图层由四套大气模式共同提供(服务端模式下附加 Open-Meteo 备用源)。
+ * 模式解析原则:点击图层即显示 — 当前模式提供则沿用,否则自动切到最优可用模式;
+ * 仅当一个图层有多个数据模式时才显示右下角模式选择器。 */
+const DEFAULT_MODELS = ['gfs_raw', 'ecmwf_raw', 'aifs_raw', 'gefs_raw'];
+const OM_MODELS = ['best_match', 'gfs_seamless', 'icon_seamless', 'ecmwf_ifs025'];
+function modelsForLayer(def, { inclFallback = false } = {}) {
+  if (def.models) return def.models;
+  return inclFallback && !isStatic() ? [...DEFAULT_MODELS, ...OM_MODELS] : DEFAULT_MODELS;
 }
 
 /* ---------- URL 状态(分享/恢复) ---------- */
@@ -331,10 +330,15 @@ document.getElementById('legend-btn').addEventListener('click', () => {
 
 /* ---------- 图层切换(分组手风琴) ---------- */
 const layerBtnBox = document.getElementById('layer-buttons');
+/* 图层置灰仅表示"所有数据模式都未上线"(如专用包尚未进数据管道);
+ * 只要任一候选模式有数据,图层就可点开并自动切到该模式 */
+function layerGloballyAvailable(def) {
+  if (!staticAvailReady()) return true; // 服务端模式或清单未就绪:不误判
+  return modelsForLayer(def).some((m) => staticHasModel(m));
+}
 function refreshLayerButtons() {
   for (const btn of layerBtnBox.querySelectorAll('.layer-btn')) {
-    const def = layerById(btn.dataset.layer);
-    btn.classList.toggle('dim', !layerAvailable(def, state.model));
+    btn.classList.toggle('dim', !layerGloballyAvailable(layerById(btn.dataset.layer)));
   }
 }
 let openGroups = new Set();
@@ -382,27 +386,72 @@ function openGroupOf(layerId) {
   if (g) { openGroups.add(g.id); renderLayerGroups(); }
 }
 
+/* ---------- 模式自动解析(图层点开即显示,右下角选择器只做多模式切换) ---------- */
+let staticAvailPromise = null;
+function ensureStaticAvail() {
+  if (!staticAvailPromise) staticAvailPromise = staticAvailableModels().catch(() => null);
+  return staticAvailPromise;
+}
+function modelHasData(m) {
+  if (!staticAvailReady()) return true; // 服务端模式或清单未就绪:视为可用
+  return staticHasModel(m);
+}
+/* 为图层选出一个有数据的模式:当前模式提供则沿用(不折腾),
+ * 专用图层(autoModel)优先升级专用模式,否则按候选优先级取首个可用者 */
+async function resolveLayerModel(def) {
+  await ensureStaticAvail();
+  const cands = modelsForLayer(def, { inclFallback: true });
+  if (def.autoModel && cands.length && modelHasData(cands[0])) return cands[0];
+  if (cands.includes(state.model) && modelHasData(state.model)) return state.model;
+  for (const m of cands) if (modelHasData(m)) return m;
+  return null;
+}
+/* 模式切换的公共副作用(手动选择与图层自动切换共用) */
+function applyModelCore(m) {
+  state.model = m;
+  const sel = document.getElementById('model-select');
+  if (sel.value !== m) sel.value = m;
+  window.__currentModelLabel = MODEL_LABELS[m];
+  if (!LEVEL_LAYERS.has(state.layer) || m !== 'gfs_raw') { if (state.level) state.level = 0; }
+  /* 位势高度层切回 GFS 时回到默认 500 hPa(表面无此要素) */
+  if (state.layer === 'gph' && !state.level) state.level = 500;
+  clearGridCache();
+  state.grid = null; state.gridKey = '';
+  refreshLayerButtons();
+  updateLevelBar();
+  panel.refresh();
+}
+/* 右下角模式选择器:只列出当前图层可用的数据模式;唯一模式时整个胶囊隐藏 */
+function refreshModelPill() {
+  const pill = document.getElementById('model-pill');
+  const sel = document.getElementById('model-select');
+  const def = layerById(state.layer);
+  if (!def) { pill.hidden = true; return; }
+  let cands = modelsForLayer(def, { inclFallback: true });
+  if (staticAvailReady()) cands = cands.filter((m) => staticHasModel(m));
+  sel.innerHTML = '';
+  for (const m of cands) {
+    const o = document.createElement('option');
+    o.value = m;
+    o.textContent = MODEL_SHORT[m] || m;
+    sel.appendChild(o);
+  }
+  if (cands.includes(state.model)) sel.value = state.model;
+  pill.hidden = cands.length <= 1;
+}
+
 async function setLayer(id, silent = false) {
   const def0 = layerById(id);
-  /* 雪包等专用图层:专用模式有数据时自动切换升级;未上线则留在当前模式,
-   * 用其兼容变量版本先顶着(如 gfs_raw 的 2.5° 雪),避免点开空白 */
-  if (def0.autoModel && def0.models[0] !== state.model && staticHasModel(def0.models[0])) {
-    state.model = def0.models[0];
-    document.getElementById('model-select').value = state.model;
-    window.__currentModelLabel = MODEL_LABELS[state.model];
-    if (state.level) state.level = 0;
-    clearGridCache();
-    state.grid = null; state.gridKey = '';
-    refreshLayerButtons();
-    panel.refresh();
-    hint(`已切换到 ${MODEL_SHORT[state.model] || state.model} 模式`);
-  }
-  if (!layerAvailable(def0, state.model)) {
-    toast(def0.models && def0.models.includes('waves_raw')
-      ? `「${def0.label}」为海浪图层,请在设置中把模型切换到 NOAA Wave`
-      : `「${def0.label}」暂不支持当前模式`);
+  if (!def0) return;
+  /* 智能模式解析:当前模式提供该图层则直接显示,否则自动切到最优可用模式 —
+   * 图层点开即用,无需手动到右下角切换模式 */
+  const target = await resolveLayerModel(def0);
+  if (!target) {
+    toast(`「${def0.label}」的数据模式尚未上线,请稍后再试`);
     return;
   }
+  const switched = target !== state.model;
+  if (switched) applyModelCore(target);
   state.layer = id;
   /* 位势高度默认 500 hPa(表面无此要素) */
   if (id === 'gph' && !state.level) { state.level = 500; syncUrl(); }
@@ -453,8 +502,11 @@ async function setLayer(id, silent = false) {
       loadingEl.hidden = true;
     }
   }
+  /* 模式自动切换或首启后格点为空 → 立即拉取(常规平移缩放仍由 moveend 调度) */
+  if (!state.grid) scheduleGridFetch(0);
+  refreshModelPill();
   onTimeChange(state.timePos);
-  if (!silent) hint(`图层 · ${def.label}`);
+  if (!silent) hint(switched ? `图层 · ${def.label} · 已切换到 ${MODEL_SHORT[target] || target}` : `图层 · ${def.label}`);
 }
 
 /* 粒子开关 */
@@ -704,25 +756,15 @@ const MODEL_SHORT = {
   best_match: 'OM 最佳匹配', gfs_seamless: 'OM GFS', icon_seamless: 'OM ICON', ecmwf_ifs025: 'OM ECMWF',
 };
 document.getElementById('model-select').addEventListener('change', (e) => {
-  state.model = e.target.value;
+  const m = e.target.value;
+  if (!m || m === state.model) return;
+  /* 选择器只列出当前图层可用的模式,切换即生效,无需兜底跳转主图层 */
+  applyModelCore(m);
   syncUrl();
-  hint(`模式 · ${MODEL_SHORT[state.model] || state.model}`);
-  window.__currentModelLabel = MODEL_LABELS[state.model];
-  if (!LEVEL_LAYERS.has(state.layer) || state.model !== 'gfs_raw') { if (state.level) state.level = 0; }
-  /* 位势高度层切回 GFS 时回到默认 500 hPa(表面无此要素) */
-  if (state.layer === 'gph' && !state.level) state.level = 500;
-  /* 模式切换后当前图层不可用 → 自动落到该模式的主图层 */
-  if (!layerAvailable(layerById(state.layer), state.model)) {
-    const home = state.model === 'waves_raw' ? 'wvh' : state.model === 'ocean_raw' ? 'sst' : state.model === 'gfs_snow' ? 'snow' : 'wind';
-    setLayer(home, true);
-  } else particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
+  hint(`模式 · ${MODEL_SHORT[m] || m}`);
+  particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
   particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');
-  clearGridCache();
-  state.grid = null; state.gridKey = '';
-  refreshLayerButtons();
-  updateLevelBar();
   scheduleGridFetch(0);
-  panel.refresh();
 });
 document.getElementById('basemap-select').addEventListener('change', (e) => setBasemap(e.target.value));
 /* ---------- 单位系统(注册表 + 设置弹层,替代原 °C/°F 单选) ---------- */
@@ -815,7 +857,7 @@ map.on('click', (e) => {
 
 /* ---------- 键盘(shortcuts.js 统一注册) ---------- */
 function cycleLayer(dir) {
-  const ids = GROUPS.flatMap((g) => g.layers).filter((id) => layerAvailable(layerById(id), state.model));
+  const ids = GROUPS.flatMap((g) => g.layers).filter((id) => layerGloballyAvailable(layerById(id)));
   if (!ids.length) return;
   const i = ids.indexOf(state.layer);
   const next = ids[(((i < 0 ? 0 : i) + dir) % ids.length + ids.length) % ids.length];
@@ -942,17 +984,12 @@ window.__state = state; window.__globe = globe; // 调试钩子
 window.__applyGrid = (data, key) => applyGrid(data instanceof Grid ? data : new Grid(data), key || 'debug'); // 调试钩子:可注入格点数据
 window.__app_map = map;
 window.__app_overlays = { lightning, satellite, tropical, stations, aurora }; // 调试钩子:叠加层状态
-/* 静态模式:模型选择器只保留静态包里实际存在的模式 */
-staticAvailableModels().then((avail) => {
-  if (!avail || !avail.length) return;
-  const sel = document.getElementById('model-select');
-  [...sel.options].forEach((o) => { if (!avail.includes(o.value)) o.hidden = true; });
-  if (avail.includes(state.model)) return;
-  const fallback = avail.includes('gfs_raw') ? 'gfs_raw' : avail[0];
-  sel.value = fallback;
-  sel.dispatchEvent(new Event('change'));
+/* 静态模式:数据索引就绪后刷新图层置灰与模式胶囊(初始 setLayer 内部已等待索引,
+ * URL 指定的模式若不提供该图层,也会由 setLayer 的自动解析修正) */
+ensureStaticAvail().then(() => {
+  refreshLayerButtons();
+  refreshModelPill();
 });
-if (urlState.m) document.getElementById('model-select').value = state.model;
 if (urlState.bm) document.getElementById('basemap-select').value = state.basemap;
 setBasemap(state.basemap);
 applyOpacity(state.opacity);

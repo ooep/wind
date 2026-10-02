@@ -310,6 +310,11 @@ export function staticHasModel(m) {
   return !!staticAvailCache && staticAvailCache.includes(m);
 }
 
+/* 同步查询:静态模式清单是否已加载(未加载时调用方不应据此置灰图层或过滤选择器) */
+export function staticAvailReady() {
+  return !!staticAvailCache;
+}
+
 /* 海浪模式点位:波高/周期/方向系列,大气要素为 null(面板走海洋视图) */
 async function staticPointWaves(lat, lon, model) {
   const grid = await staticModelGrid(model, ['wvh', 'wvp', 'wvd']);
