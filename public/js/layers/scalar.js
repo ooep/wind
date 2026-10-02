@@ -51,6 +51,7 @@ export class ScalarLayer {
     ctx.clearRect(0, 0, W, H);
 
     const bw = Math.ceil(view.w / BLOCK), bh = Math.ceil(view.h / BLOCK);
+    if (bw <= 0 || bh <= 0) return; // 容器尚未完成布局(0 尺寸)时跳过本帧
     if (this.off.width !== bw || this.off.height !== bh) {
       this.off.width = bw; this.off.height = bh;
     }
