@@ -10,6 +10,7 @@ on:
       - 'data · ECMWF IFS 0.25°'
       - 'data · ECMWF AIFS 0.25°'
       - 'data · GFS Wave 0.25°'
+      - 'data · OISST 海温(日更)'
       - 'data · 站点实况与热带气旋'
     types: [completed]
   workflow_dispatch: {}
