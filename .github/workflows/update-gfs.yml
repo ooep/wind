@@ -48,8 +48,8 @@ jobs:
         run: |
           git config user.name  "fy-data-bot"
           git config user.email "fy-data-bot@users.noreply.github.com"
-          mkdir -p /tmp/fytools
-          cp tools/build-static.js /tmp/fytools/
+          mkdir -p /tmp/fytools/tools
+          cp tools/build-static.js /tmp/fytools/tools/
           cp -r server /tmp/fytools/server
           if git fetch origin data-dist 2>/dev/null; then
             git checkout -B data-dist origin/data-dist
