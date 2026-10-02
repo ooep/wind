@@ -59,7 +59,7 @@ const VARS = {
   newsnow: { grib: 'WEASD', level: 'surface', scale: 10, conv: (v) => v },                   // 新雪:WEASD 差分 ×10(1mm 水 ≈ 1cm 雪),见 ingestOne
 };
 
-/* 气压层变量(按需摄取):该层的风/温/湿 */
+/* 气压层变量(按需摄取):该层的风/温/湿 + 位势高度 */
 const LEVELS = [925, 850, 700, 500, 300, 250, 200, 150, 100];
 function levelVars(level) {
   return {
@@ -67,6 +67,7 @@ function levelVars(level) {
     v: { grib: 'VGRD', level: `${level} mb`, scale: 100, conv: (v) => v },
     temp: { grib: 'TMP', level: `${level} mb`, scale: 100, conv: (v) => v - 273.15 },
     rh: { grib: 'RH', level: `${level} mb`, scale: 100, conv: (v) => v },
+    h: { grib: 'HGT', level: `${level} mb`, scale: 1, conv: (v) => v },
   };
 }
 
@@ -517,7 +518,7 @@ async function rawGrid(w, s, e, n, stepDeg, level = 0) {
   const vars = { ...base.vars };
   if (level > 0) {
     const lev = await levelEngine(level).gridCore(w, s, e, n, stepDeg);
-    for (const vk of ['u', 'v', 'temp', 'rh']) vars[vk] = lev.vars[vk];
+    for (const vk of ['u', 'v', 'temp', 'rh', 'h']) vars[vk] = lev.vars[vk];
   }
   return {
     model: 'gfs_raw',
@@ -677,10 +678,10 @@ function status() {
   };
 }
 
-/* 气压层全球粗网格(静态构建用):仅该层的 u/v/temp/rh */
+/* 气压层全球粗网格(静态构建用):该层的 u/v/temp/rh + 位势高度 h */
 async function levelRawGrid(level, w, s, e, n, stepDeg) {
   const lev = await levelEngine(level).gridCore(w, s, e, n, stepDeg);
-  const out = { ...lev, vars: Object.fromEntries(Object.entries(lev.vars).filter(([k]) => ['u', 'v', 'temp', 'rh'].includes(k))) };
+  const out = { ...lev, vars: Object.fromEntries(Object.entries(lev.vars).filter(([k]) => ['u', 'v', 'temp', 'rh', 'h'].includes(k))) };
   lev.mem.clear(); lev.memOrder.length = 0; // 烘焙串行跑 9 层,采样完及时释放内存
   return out;
 }

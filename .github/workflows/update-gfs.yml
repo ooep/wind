@@ -17,7 +17,7 @@ concurrency:
 jobs:
   ingest-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 150 # 逐小时步长后首次全量摄取约 2205 条消息,需 ~130 分钟
+    timeout-minutes: 180 # 层级包加入位势高度后消息数 +25%(约 2770 条),按 ~160 分钟留余量
     steps:
       - uses: actions/checkout@v4
 

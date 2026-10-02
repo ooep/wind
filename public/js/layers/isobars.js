@@ -1,4 +1,4 @@
-/* 等压线层:对海平面气压格点做 marching squares 提取等值线 */
+/* 等值线层:marching squares 提取等值线(默认海平面气压,可配置任意标量场与间距) */
 import { getView } from '../util.js';
 
 export class IsobarLayer {
@@ -9,6 +9,9 @@ export class IsobarLayer {
     document.getElementById('overlay-root').appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
     this.grid = null;
+    this.varName = 'msl';
+    this.interval = 4;
+    this.majorEvery = 3;
     this.fr = { i0: 0, i1: 0, f: 0 };
     this.visible = false;
     map.on('move zoom resize viewreset', () => this.redraw());
@@ -16,6 +19,13 @@ export class IsobarLayer {
 
   setGrid(g) { this.grid = g; this.redraw(); }
   setFrame(fr) { this.fr = fr; this.redraw(); }
+  /* 等值线源与间距:气压 4hPa/主线每 3 条;位势高度 60gpm/主线每 5 条 */
+  setSource(varName, interval = 4, majorEvery = 3) {
+    this.varName = varName || 'msl';
+    this.interval = interval;
+    this.majorEvery = majorEvery;
+    if (this.visible) this.redraw();
+  }
   show(on) {
     this.visible = on;
     this.canvas.style.display = on ? 'block' : 'none';
@@ -35,16 +45,17 @@ export class IsobarLayer {
     if (!this.visible || !this.grid) return;
 
     const grid = this.grid;
-    const frame = this.fr.i0; // 等压线取最近整点帧
+    const frame = this.fr.i0; // 等值线取最近整点帧
+    const interval = this.interval;
     const { cols, rows, step, lon0, lat0 } = grid;
-    const msl = grid.vars.msl;
-    if (!msl) return;
+    const src = grid.vars[this.varName];
+    if (!src) return;
 
     // 求值域(稀疏采样)
     let mn = Infinity, mx = -Infinity;
     const strideT = Math.max(1, Math.floor((grid.nT * grid.P) / 5000));
-    for (let k = 0; k < msl.length; k += strideT) {
-      const v = msl[k];
+    for (let k = 0; k < src.length; k += strideT) {
+      const v = src[k];
       if (!Number.isNaN(v)) { if (v < mn) mn = v; if (v > mx) mx = v; }
     }
     if (!Number.isFinite(mn)) return;
@@ -61,8 +72,8 @@ export class IsobarLayer {
       out[0] = p.x; out[1] = p.y;
     };
 
-    for (let level = Math.ceil(mn / 4) * 4; level <= mx; level += 4) {
-      const isMajor = (Math.round(level / 4) % 3) === 0; // 每 12 hPa 一条主线
+    for (let level = Math.ceil(mn / interval) * interval; level <= mx; level += interval) {
+      const isMajor = (Math.round(level / interval) % this.majorEvery) === 0;
       ctx.beginPath();
       const a = [0, 0], b = [0, 0];
       let any = false;
@@ -72,10 +83,10 @@ export class IsobarLayer {
         const lat = lat0 - (j + 0.5) * step;
         if (lat < view.containerToLatLng(0, view.h).lat - step) continue; // 视口裁剪(粗略)
         for (let i = 0; i < cols - 1; i++) {
-          const v00 = msl[frame * grid.P + rowOff + i];
-          const v10 = msl[frame * grid.P + rowOff + i + 1];
-          const v01 = msl[frame * grid.P + rowOff2 + i];
-          const v11 = msl[frame * grid.P + rowOff2 + i + 1];
+          const v00 = src[frame * grid.P + rowOff + i];
+          const v10 = src[frame * grid.P + rowOff + i + 1];
+          const v01 = src[frame * grid.P + rowOff2 + i];
+          const v11 = src[frame * grid.P + rowOff2 + i + 1];
           if (Number.isNaN(v00) || Number.isNaN(v10) || Number.isNaN(v01) || Number.isNaN(v11)) continue;
           let bits = 0;
           if (v00 > level) bits |= 8;

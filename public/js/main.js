@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, gphCmap } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -56,6 +56,10 @@ const ICONS = {
   wwh: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 11.5c1.6-2.6 3.2-2.6 4.8 0s3.2 2.6 4.8 0 3.2-2.6 4.8 0 3.2 2.6 4.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M2.5 17c1.6-2.6 3.2-2.6 4.8 0s3.2 2.6 4.8 0 3.2-2.6 4.8 0 3.2 2.6 4.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.6"/></svg>',
   wwp: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5V12l2.8 1.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M6.5 18.5c1.5-1.8 3-1.8 4.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.65"/></svg>',
   wve: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 18c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M13.5 2.5 7.5 10.5h3.6L9.5 17l6.8-8.5h-3.7l1.6-6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  fog: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 9h13M2.5 12.5h16M5 16h12M9 19.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  gph: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 19c0-5 4-9 8-9s8 4 8 9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 19c0-3 2-5.5 4.5-5.5s4.5 2.5 4.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.75"/><path d="M10.5 19c0-1 .7-1.8 1.5-1.8s1.5.8 1.5 1.8" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/><path d="M3.5 21h17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  precip24: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  precip72: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   aqi: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3.5 9c3.2-1.6 6.3-1.6 9.4 0 2.4 1.2 4.6 1.3 6.6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3.5 13.5c3.2-1.6 6.3-1.6 9.4 0 2.4 1.2 4.6 1.3 6.6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3.5 18c3.2-1.6 6.3-1.6 9.4 0 2.4 1.2 4.6 1.3 6.6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/></svg>',
   wetbulb: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 4a2 2 0 1 1 4 0v9.3a4.5 4.5 0 1 1-4 0z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.6 13.2s2.2 2.5 2.2 4a2.2 2.2 0 0 1-4.4 0c0-1.5 2.2-4 2.2-4z" fill="currentColor"/></svg>',
   sst: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 16.5c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 3.5c2.3 1.9 3.7 3.7 3.7 5.6a3.7 3.7 0 0 1-7.4 0c0-1.9 1.4-3.7 3.7-5.6z" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
@@ -83,7 +87,10 @@ const LAYERS = [
   { id: 'mcdc', label: '中云', unit: '%', cmap: CLOUD, variable: 'mcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'hcdc', label: '高云', unit: '%', cmap: CLOUD, variable: 'hcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'cwat', label: '云水', unit: 'mm', cmap: CWAT, variable: 'cwat', fmt: (v) => v.toFixed(2), models: ['gfs_raw'] },
+  { id: 'fog', label: '雾', unit: '', cmap: FOG, variable: 'fog', fmt: (v) => ['—', '可能', '大概率', '雾'][Math.round(v)] || '' },
   { id: 'precip', label: '降水', unit: 'mm/h', cat: 'precip', cmap: PRECIP, variable: 'precip', fmt: (v) => fmtPrecipStr(v) },
+  { id: 'precip24', label: '降水·24h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip24', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
+  { id: 'precip72', label: '降水·72h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip72', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ['—', '雨', '冻雨', '雪'][Math.round(v)] || '' },
   { id: 'vis', label: '能见度', unit: 'km', cmap: VIS, variable: 'vis', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
@@ -92,6 +99,7 @@ const LAYERS = [
   { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
   { id: 'pressure', label: '气压', unit: 'hPa', cat: 'pressure', cmap: MSL, variable: 'msl', fmt: (v) => fmtPresStr(v), isobars: true },
+  { id: 'gph', label: '位势高度', unit: 'm', cmap: gphCmap(500), variable: 'h', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'], levels: true, isolines: true },
   { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
   { id: 'soilt', label: '土壤温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'soilt', fmt: (v) => String(Math.round(convV('temp', v))), models: ['gfs_raw'] },
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
@@ -117,9 +125,9 @@ const GROUPS = [
   { id: 'obs', label: '观测', layers: ['radar'] },
   { id: 'wind', label: '风', layers: ['wind', 'gust', 'barbs'] },
   { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl'] },
-  { id: 'cloud', label: '云雨', layers: ['cloud', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'precip', 'ptype', 'vis'] },
+  { id: 'cloud', label: '云雨', layers: ['cloud', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
-  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure'] },
+  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure', 'gph'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
   { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst'] },
   { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
@@ -131,22 +139,29 @@ function varNeeds(def) {
   const M = {
     wind: ['u', 'v'], gust: ['gust'], barbs: ['u', 'v'],
     feels: ['temp', 'rh', 'u', 'v'], wetbulb: ['temp', 'rh'], dew: ['temp', 'rh'], ptype: ['temp', 'precip'],
+    fog: ['rh'],
   };
   return M[def.variable] || [def.variable];
 }
 const layerById = (id) => LAYERS.find((l) => l.id === id);
 
-/* 当前图层+气压层所需的变量键:层级>0 时给 u/v/temp/rh 加后缀(静态包按层懒加载) */
+/* 图层色标(位势高度按当前气压层取对应色标)与等值线间距 gpm */
+const GPH_INT = { 925: 30, 850: 40, 700: 50, 500: 60, 300: 90, 250: 120, 200: 120, 150: 160, 100: 200 };
+function layerCmap(def) {
+  return def.id === 'gph' ? gphCmap(state.level || 500) : def.cmap;
+}
+
+/* 当前图层+气压层所需的变量键:层级>0 时给 u/v/temp/rh/h 加后缀(静态包按层懒加载) */
 function needsFor(def) {
   const base = [...new Set(['u', 'v', ...varNeeds(def)])];
   /* 海浪模式:粒子着色取波高,任意波浪图层都需 wvh 就绪 */
   if (state.model === 'waves_raw' && !base.includes('wvh')) base.push('wvh');
   if (!state.level) return base;
-  return base.map((vk) => ['u', 'v', 'temp', 'rh'].includes(vk) ? `${vk}@${state.level}` : vk);
+  return base.map((vk) => ['u', 'v', 'temp', 'rh', 'h'].includes(vk) ? `${vk}@${state.level}` : vk);
 }
 
-// 支持气压层切换的图层(风/风向杆/温/湿)
-const LEVEL_LAYERS = new Set(['wind', 'barbs', 'temp', 'humidity']);
+// 支持气压层切换的图层(风/风向杆/温/湿/位势高度)
+const LEVEL_LAYERS = new Set(['wind', 'barbs', 'temp', 'humidity', 'gph']);
 // 海浪/海温模式的图层白名单:该模式仅提供各自要素
 const WAVE_ONLY = new Set(['wvh', 'wvp']);
 const OCEAN_ONLY = new Set(['sst']);
@@ -252,8 +267,9 @@ function updateLegend() {
   if (!def) { legendEl.hidden = true; return; }
   legendEl.hidden = false;
   document.getElementById('legend-title').textContent = `${def.label} · ${def.cat ? unitLabel(def.cat) : def.unit}`;
-  document.getElementById('legend-bar').style.background = def.cmap.gradientCss();
-  const stops = def.cmap.stops;
+  const cmap = layerCmap(def);
+  document.getElementById('legend-bar').style.background = cmap.gradientCss();
+  const stops = cmap.stops;
   const idxs = [...new Set([0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * (stops.length - 1))))];
   document.getElementById('legend-labels').innerHTML =
     idxs.map((i) => `<span>${def.fmt(stops[i][0])}</span>`).join('');
@@ -339,6 +355,8 @@ async function setLayer(id, silent = false) {
     return;
   }
   state.layer = id;
+  /* 位势高度默认 500 hPa(表面无此要素) */
+  if (id === 'gph' && !state.level) { state.level = 500; syncUrl(); }
   syncUrl();
   document.getElementById('cursor-tip').hidden = true; // 旧图层读数立即失效
   openGroupOf(id);
@@ -357,14 +375,19 @@ async function setLayer(id, silent = false) {
 
   if (!isRadar && !isAqi && !isBarbs) {
     scalar.show(true);
-    scalar.setVar(def.variable, def.cmap);
+    scalar.setVar(def.variable, layerCmap(def));
     scalar.setMaskLand(!!def.maskLand);
   } else {
     scalar.show(false);
   }
   /* 粒子着色:海浪模式按波高,其余按风速 */
   particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
-  isobars.show(!!def.isobars);
+  particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');
+  /* 等值线:气压层用等压线,位势高度层用等高线(间距随层变化) */
+  const isoCfg = def.isobars ? { var: 'msl', interval: 4, major: 3 }
+    : def.isolines ? { var: def.variable, interval: GPH_INT[state.level || 500], major: 5 } : null;
+  isobars.show(!!isoCfg);
+  if (isoCfg) isobars.setSource(isoCfg.var, isoCfg.interval, isoCfg.major);
   updateLegend();
   /* 观测数据有效窗(雷达:过去 2h 观测 + 30min 外推)供时间轴分段着色 */
   timeline.setDataWindow(def.special === 'radar' ? { past: 2.1 * 3600e3, fcst: 1800e3 } : null);
@@ -630,11 +653,14 @@ document.getElementById('model-select').addEventListener('change', (e) => {
   hint(`模式 · ${MODEL_SHORT[state.model] || state.model}`);
   window.__currentModelLabel = MODEL_LABELS[state.model];
   if (!LEVEL_LAYERS.has(state.layer) || state.model !== 'gfs_raw') { if (state.level) state.level = 0; }
+  /* 位势高度层切回 GFS 时回到默认 500 hPa(表面无此要素) */
+  if (state.layer === 'gph' && !state.level) state.level = 500;
   /* 模式切换后当前图层不可用 → 自动落到该模式的主图层 */
   if (!layerAvailable(layerById(state.layer), state.model)) {
     const home = state.model === 'waves_raw' ? 'wvh' : state.model === 'ocean_raw' ? 'sst' : 'wind';
     setLayer(home, true);
   } else particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
+  particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');
   clearGridCache();
   state.grid = null; state.gridKey = '';
   refreshLayerButtons();
@@ -843,6 +869,12 @@ function setLevel(v) {
   clearGridCache();
   state.grid = null; state.gridKey = '';
   scheduleGridFetch(0);
+  /* 位势高度:换层同步换色标与等高线间距 */
+  if (state.layer === 'gph') {
+    scalar.setVar('h', gphCmap(v));
+    isobars.setSource('h', GPH_INT[v] || 60, 5);
+    updateLegend();
+  }
   const l = LEVELS_UI.find((x) => x.v === v);
   hint(`气压层 · ${l ? l.label : v} hPa`);
 }

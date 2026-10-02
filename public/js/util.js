@@ -220,6 +220,19 @@ export class Grid {
       if (t > 0.5) return 2;
       return 3;
     }
+    if (varName === 'fog') {
+      // 雾指标:2m 湿度 + 10m 风速(高湿 + 小风才起雾)0 无 1 可能 2 大概率 3 雾
+      const rh = this._bilinear('rh', lon, lat, fr);
+      if (Number.isNaN(rh)) return NaN;
+      if (rh < 88) return 0;
+      const u = this._bilinear('u', lon, lat, fr);
+      const v = this._bilinear('v', lon, lat, fr);
+      const ws = Number.isNaN(u) || Number.isNaN(v) ? 0 : Math.hypot(u, v);
+      let idx = rh >= 97 ? 3 : rh >= 94 ? 2 : 1;
+      if (ws > 6) idx = Math.min(idx, 1);
+      else if (ws > 3) idx = Math.min(idx, 2);
+      return idx;
+    }
     return this._bilinear(varName, lon, lat, fr);
   }
 

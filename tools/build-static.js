@@ -38,10 +38,12 @@ const WANT_TILES = flag('tiles');
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
 /* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
+const DERIVED_SCALE = { precip24: 10, precip72: 10 }; // 烘焙端派生量:降水累计 mm(0.1mm 精度,上限 3276mm)
 function varScale(model, vk) {
   const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
   if (model === 'ocean_raw') return base === 'sst' ? 100 : 1;
   if (model === 'gfs_raw') {
+    if (DERIVED_SCALE[base]) return DERIVED_SCALE[base];
     const cfg = gfs.surfaceEngine.varCfg[base];
     if (cfg) return cfg.scale;
   } else {
@@ -106,6 +108,45 @@ async function main() {
 
     // 全球粗网格(2.5°):Int16 + 每变量 scale(体积较 Float32 减半,浏览器解码快)
     const coarse = await rawGridOf(-180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
+
+    // 降水累计窗口:由 PRATE(mm/h)按帧距积分得「过去 24/72h 累计」(帧距不均:逐小时 → 3 小时)
+    if (model === 'gfs_raw' && coarse.vars.precip) {
+      const bin = Buffer.from(coarse.vars.precip, 'base64');
+      const rate = new Float32Array(bin.buffer, bin.byteOffset, bin.byteLength / 4);
+      const ms = coarse.times.map((t) => Date.parse(t + ':00Z'));
+      const nPts = coarse.lons.length * coarse.lats.length;
+      const P = ms.length;
+      for (const win of [24, 72]) {
+      // 每个时刻的回看帧表 [f, dt_h]:dt 按帧区间与窗口 (t-win, t] 的重叠时长裁剪
+      // (逐小时→3 小时步长过渡处的帧会跨越窗口边界,整帧计入会高估)
+      const frames = [];
+      for (let t = 0; t < P; t++) {
+        const w0 = ms[t] - win * 3600e3;
+        const arr = [];
+        for (let f = t; f >= 0 && ms[f] > w0; f--) {
+          const o0 = Math.max(f === 0 ? ms[0] : ms[f - 1], w0);
+          const dt = (ms[f] - o0) / 3600e3;
+          if (dt > 0) arr.push([f, dt]);
+        }
+        frames.push(arr);
+      }
+        const out = new Float32Array(P * nPts);
+        for (let t = 0; t < P; t++) {
+          for (const [f, dt] of frames[t]) {
+            if (!dt) continue;
+            const base = f * nPts, obase = t * nPts;
+            for (let p = 0; p < nPts; p++) {
+              const r = rate[base + p];
+              if (!Number.isNaN(r)) out[obase + p] += r * dt;
+            }
+          }
+        }
+        coarse.vars[`precip${win}`] = Buffer.from(out.buffer, out.byteOffset, out.byteLength).toString('base64');
+        let peak = 0;
+        for (const v of out) if (Number.isFinite(v) && v > peak) peak = v;
+        console.log(`  降水累计 ${win}h 完成(峰值 ${peak.toFixed(1)} mm)`);
+      }
+    }
 
     // meta:网格形状 + 变量清单(前端据此懒加载)
     const varsManifest = {};
