@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, gphCmap } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, gphCmap } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -57,6 +57,7 @@ const ICONS = {
   wwp: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5V12l2.8 1.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M6.5 18.5c1.5-1.8 3-1.8 4.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.65"/></svg>',
   wve: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 18c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M13.5 2.5 7.5 10.5h3.6L9.5 17l6.8-8.5h-3.7l1.6-6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   fog: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 9h13M2.5 12.5h16M5 16h12M9 19.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  fire: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2.8c1.2 3.4 4.4 4.6 4.4 8.6a4.4 4.4 0 0 1-8.8 0c0-1.5.6-2.8 1.5-4 .3 1 .9 1.8 1.9 2.3C10.6 7 10.8 4.6 12 2.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 18.5c1.1 1 2.3 1.5 3.5 1.5s2.4-.5 3.5-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/></svg>',
   gph: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 19c0-5 4-9 8-9s8 4 8 9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 19c0-3 2-5.5 4.5-5.5s4.5 2.5 4.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.75"/><path d="M10.5 19c0-1 .7-1.8 1.5-1.8s1.5.8 1.5 1.8" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/><path d="M3.5 21h17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   precip24: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   precip72: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
@@ -102,6 +103,7 @@ const LAYERS = [
   { id: 'gph', label: '位势高度', unit: 'm', cmap: gphCmap(500), variable: 'h', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'], levels: true, isolines: true },
   { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
   { id: 'soilt', label: '土壤温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'soilt', fmt: (v) => String(Math.round(convV('temp', v))), models: ['gfs_raw'] },
+  { id: 'fire', label: '火险', unit: 'CBI', cmap: FIRE, variable: 'fire', fmt: (v) => (v >= 97.5 ? '极端' : v >= 90 ? '很高' : v >= 75 ? '高' : v >= 50 ? '中' : v >= 20 ? '低' : '—'), models: ['gfs_raw'] },
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
   { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
@@ -129,6 +131,7 @@ const GROUPS = [
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
   { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure', 'gph'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
+  { id: 'fire', label: '火险', layers: ['fire'] },
   { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst'] },
   { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
 ];

@@ -38,7 +38,7 @@ const WANT_TILES = flag('tiles');
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
 /* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
-const DERIVED_SCALE = { precip24: 10, precip72: 10 }; // 烘焙端派生量:降水累计 mm(0.1mm 精度,上限 3276mm)
+const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10 }; // 烘焙端派生量:降水累计 mm(0.1mm)、火险 CBI 0.1 级
 function varScale(model, vk) {
   const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
   if (model === 'ocean_raw') return base === 'sst' ? 100 : 1;
@@ -146,6 +146,26 @@ async function main() {
         for (const v of out) if (Number.isFinite(v) && v > peak) peak = v;
         console.log(`  降水累计 ${win}h 完成(峰值 ${peak.toFixed(1)} mm)`);
       }
+    }
+
+    // 火险指数 CBI(Chandler Burning Index):仅由 2m 温度 + 相对湿度驱动的天气火险,
+    // 连续 0-110+;≥50 中 / ≥75 高 / ≥90 很高 / ≥97.5 极端(不含风与可燃物,作快速参考层)
+    if (model === 'gfs_raw' && coarse.vars.temp && coarse.vars.rh) {
+      const tb = Buffer.from(coarse.vars.temp, 'base64');
+      const T = new Float32Array(tb.buffer, tb.byteOffset, tb.byteLength / 4);
+      const rb = Buffer.from(coarse.vars.rh, 'base64');
+      const R = new Float32Array(rb.buffer, rb.byteOffset, rb.byteLength / 4);
+      const out = new Float32Array(T.length);
+      let peak = 0;
+      for (let i = 0; i < T.length; i++) {
+        const t = T[i], r = R[i];
+        if (Number.isNaN(t) || Number.isNaN(r)) { out[i] = NaN; continue; }
+        const cbi = ((110 - 1.373 * r) - 0.54 * (10.20 - t)) * 124 * Math.pow(10, -0.0274 * r) / 60;
+        out[i] = Math.max(0, cbi);
+        if (Number.isFinite(cbi) && cbi > peak) peak = cbi;
+      }
+      coarse.vars.fire = Buffer.from(out.buffer, out.byteOffset, out.byteLength).toString('base64');
+      console.log(`  火险 CBI 完成(峰值 ${peak.toFixed(1)})`);
     }
 
     // meta:网格形状 + 变量清单(前端据此懒加载)

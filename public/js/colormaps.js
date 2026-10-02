@@ -239,6 +239,13 @@ export const PACCU = makeScale([
   [100, 240, 52, 52, 238], [200, 180, 22, 122, 242], [400, 122, 2, 180, 246],
 ]);
 
+/* 火险指数 CBI(Chandler:仅温度+湿度;0-50 低 → 50-75 中 → 75-90 高 → 90+ 很高/极端) */
+export const FIRE = makeScale([
+  [0, 110, 170, 90, 0], [20, 150, 195, 105, 195], [50, 240, 224, 80, 225],
+  [75, 244, 160, 50, 232], [90, 236, 70, 50, 238], [100, 172, 20, 40, 242],
+  [120, 118, 10, 110, 246],
+]);
+
 export const COLORMAPS = {
   wind: WIND, temp: TEMP, msl: MSL, precip: PRECIP, cloud: CLOUD, rh: RH,
   feels: TEMP, dew: DEW, ptype: PTYPE, cape: CAPE, snow: SNOWCM, vis: VIS,
@@ -247,5 +254,5 @@ export const COLORMAPS = {
   wvh: WAVES, wvp: WPER, aqi: AQI,
   wetbulb: TEMP, sst: SST, pm25: PM25, no2: NO2, o3: O3, so2: SO2,
   swvh: WAVES, swvp: WPER, wwh: WAVES, wwp: WPER, wve: WENERGY,
-  pm10: PM25, uv: UVI, fog: FOG, paccu: PACCU,
+  pm10: PM25, uv: UVI, fog: FOG, paccu: PACCU, fire: FIRE,
 };
