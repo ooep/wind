@@ -172,7 +172,7 @@ class WavesEngine extends ModelEngine {
     const wve = new Float32Array(h.length);
     for (let i = 0; i < h.length; i++) {
       if (Number.isNaN(h[i]) || Number.isNaN(d[i])) { u[i] = NaN; v[i] = NaN; continue; }
-      const spd = Math.min(10, 0.8 * h[i] + 0.5);
+      const spd = Math.min(6.5, 2.2 + h[i] * 0.5); // 均匀基速:平静区也可见流动,风暴略快(视觉标定)
       const to = (d[i] + 180) * Math.PI / 180;
       u[i] = spd * Math.sin(to);
       v[i] = spd * Math.cos(to);

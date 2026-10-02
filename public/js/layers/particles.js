@@ -4,7 +4,12 @@ import { WIND } from '../colormaps.js';
 
 const MAX_SPEED_PX = 5.5;   // 单帧位移上限(px),防止视觉过快
 const BASE_K = 0.055;        // z=2 时的 px/(m/s·帧) 系数
-const FADE_ALPHA = 0.945;    // 拖尾衰减
+
+/* 粒子动效档位:default=风场;wave=海浪(短拖尾、低密度,柔缓的涌浪流动) */
+const PROFILES = {
+  default: { fade: 0.945, lineWidth: 1.4, ttlMin: 40, ttlVar: 110, density: 1 },
+  wave: { fade: 0.928, lineWidth: 1.3, ttlMin: 32, ttlVar: 70, density: 0.6 },  // 短拖尾、低密度
+};
 
 export class ParticleLayer {
   constructor(map) {
@@ -18,11 +23,21 @@ export class ParticleLayer {
     this.enabled = true;
     this.running = false;
     this.particles = [];
+    this.profile = PROFILES.default;
     this._raf = null;
     this._needsClear = false;
     this._resize();
     map.on('resize zoomend', () => { this._resize(); this._clear(); });
     map.on('zoom move', () => { this._needsClear = true; });
+  }
+
+  /* 动效档位切换(海浪模式换长拖尾低密度) */
+  setProfile(name) {
+    const next = PROFILES[name] || PROFILES.default;
+    if (next === this.profile) return;
+    this.profile = next;
+    this._resize(); // 按新密度重算粒子数
+    this._clear();
   }
 
   _resize() {
@@ -32,7 +47,7 @@ export class ParticleLayer {
     this.w = size.x; this.h = size.y;
     this.canvas.width = Math.round(size.x * dpr);
     this.canvas.height = Math.round(size.y * dpr);
-    const target = Math.round(clampNum((size.x * size.y) / 420, 500, 4500));
+    const target = Math.round(clampNum((size.x * size.y) / 420, 500, 4500) * this.profile.density);
     this._adjustCount(target);
   }
 
@@ -46,7 +61,7 @@ export class ParticleLayer {
     p.x = Math.random() * this.w;
     p.y = Math.random() * this.h;
     p.age = 0;
-    p.ttl = 40 + Math.random() * 110;
+    p.ttl = this.profile.ttlMin + Math.random() * this.profile.ttlVar;
     return p;
   }
 
@@ -59,10 +74,12 @@ export class ParticleLayer {
 
   setFrame(fr) { this.fr = fr; }
 
-  /* 粒子着色:默认按 u/v 风速;海浪等图层可指定标量变量(如波高) */
+  /* 粒子着色:默认按 u/v 风速;海浪等图层可指定标量变量(如波高)。
+   * 海浪模式(wvh 着色)自动切换 wave 动效档(短拖尾低密度)。 */
   setColorVar(varName, cmap) {
     this.colorVar = varName || null;
     this.colorCmap = cmap || null;
+    this.setProfile(varName === 'wvh' ? 'wave' : 'default');
   }
 
   setEnabled(on) {
@@ -96,16 +113,16 @@ export class ParticleLayer {
     const grid = this.grid;
     const fr = this.fr;
 
-    // 拖尾衰减:对 alpha 通道做乘法衰减
+    // 拖尾衰减:对 alpha 通道做乘法衰减(wave 档衰减更快 → 短拖尾)
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'destination-in';
-    ctx.fillStyle = `rgba(0,0,0,${FADE_ALPHA})`;
+    ctx.fillStyle = `rgba(0,0,0,${this.profile.fade})`;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.globalCompositeOperation = 'source-over';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const k = Math.min(BASE_K * Math.pow(2, view.z - 2), MAX_SPEED_PX / 12);
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = this.profile.lineWidth;
     ctx.lineCap = 'round';
 
     for (const p of this.particles) {
