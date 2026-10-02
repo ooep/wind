@@ -9,7 +9,6 @@ on:
       - 'data · GEFS 0.5°'
       - 'data · ECMWF IFS 0.25°'
       - 'data · ECMWF AIFS 0.25°'
-      - 'data · GFS Wave 0.25°'
     types: [completed]
   workflow_dispatch: {}
 
@@ -34,8 +33,6 @@ jobs:
           node-version: '20'
 
       - name: 拉取各模式最新数据产物
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: bash tools/fetch-data-artifacts.sh
 
       - name: 组装 _site(前端 + dist/data)
