@@ -229,6 +229,7 @@ export const GPH = {
   925: gphScale(0, 2400), 850: gphScale(800, 2400), 700: gphScale(2000, 4400),
   500: gphScale(4800, 6500), 300: gphScale(8400, 10100), 250: gphScale(9800, 11500),
   200: gphScale(11000, 12700), 150: gphScale(13000, 14600), 100: gphScale(15000, 16600),
+  70: gphScale(16000, 19500), 10: gphScale(28000, 32500),
 };
 export const gphCmap = (lv) => GPH[lv] || GPH[500];
 
@@ -246,6 +247,20 @@ export const FIRE = makeScale([
   [120, 118, 10, 110, 246],
 ]);
 
+/* 风功率密度 W/m²(½ρv³;风机切入 ~200,可观发电 ~400+,强风段指数上升) */
+export const WPD = makeScale([
+  [0, 24, 48, 110, 0], [100, 90, 190, 190, 200], [300, 120, 210, 130, 225],
+  [800, 240, 220, 90, 232], [2000, 240, 150, 60, 236], [4000, 226, 70, 62, 240],
+  [8000, 168, 40, 128, 244],
+]);
+
+/* 海温距平 °C(OISST 相对 1991-2020 气候态;发散色标,0 处透明露出底图) */
+export const SSTA = makeScale([
+  [-6, 30, 40, 190, 238], [-3, 70, 140, 235, 232], [-1, 165, 215, 250, 215],
+  [0, 200, 200, 200, 0], [1, 250, 220, 170, 215], [3, 240, 120, 70, 232],
+  [6, 170, 20, 30, 238], [12, 100, 0, 60, 242],
+]);
+
 export const COLORMAPS = {
   wind: WIND, temp: TEMP, msl: MSL, precip: PRECIP, cloud: CLOUD, rh: RH,
   feels: TEMP, dew: DEW, ptype: PTYPE, cape: CAPE, snow: SNOWCM, vis: VIS,
@@ -254,5 +269,5 @@ export const COLORMAPS = {
   wvh: WAVES, wvp: WPER, aqi: AQI,
   wetbulb: TEMP, sst: SST, pm25: PM25, no2: NO2, o3: O3, so2: SO2,
   swvh: WAVES, swvp: WPER, wwh: WAVES, wwp: WPER, wve: WENERGY,
-  pm10: PM25, uv: UVI, fog: FOG, paccu: PACCU, fire: FIRE,
+  pm10: PM25, uv: UVI, fog: FOG, paccu: PACCU, fire: FIRE, wpd: WPD, ssta: SSTA,
 };

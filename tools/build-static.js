@@ -38,10 +38,10 @@ const WANT_TILES = flag('tiles');
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
 /* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
-const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10 }; // 烘焙端派生量:降水累计 mm(0.1mm)、火险 CBI 0.1 级
+const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10, wpd: 1 }; // 烘焙端派生量:降水累计 mm(0.1)、火险 CBI 0.1、风功率密度 W/m²
 function varScale(model, vk) {
   const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
-  if (model === 'ocean_raw') return base === 'sst' ? 100 : 1;
+  if (model === 'ocean_raw') return (base === 'sst' || base === 'ssta') ? 100 : 1;
   if (model === 'gfs_raw' || model === 'gfs_snow') {
     if (DERIVED_SCALE[base]) return DERIVED_SCALE[base];
     const cfg = gfs.surfaceEngine.varCfg[base];
@@ -212,6 +212,25 @@ async function main() {
       }
       coarse.vars.fire = Buffer.from(out.buffer, out.byteOffset, out.byteLength).toString('base64');
       console.log(`  火险 CBI 完成(峰值 ${peak.toFixed(1)})`);
+    }
+
+    // 风功率密度 WPD(½ρv³,ρ=1.225 kg/m³):风能资源评估标准量,由 10m 风场派生
+    if (model === 'gfs_raw' && coarse.vars.u && coarse.vars.v) {
+      const ub = Buffer.from(coarse.vars.u, 'base64');
+      const U = new Float32Array(ub.buffer, ub.byteOffset, ub.byteLength / 4);
+      const vb = Buffer.from(coarse.vars.v, 'base64');
+      const V = new Float32Array(vb.buffer, vb.byteOffset, vb.byteLength / 4);
+      const out = new Float32Array(U.length);
+      let peak = 0;
+      for (let i = 0; i < U.length; i++) {
+        const a = U[i], b = V[i];
+        if (Number.isNaN(a) || Number.isNaN(b)) { out[i] = NaN; continue; }
+        const w = 0.5 * 1.225 * Math.pow(a * a + b * b, 1.5);
+        out[i] = w;
+        if (w > peak) peak = w;
+      }
+      coarse.vars.wpd = Buffer.from(out.buffer, out.byteOffset, out.byteLength).toString('base64');
+      console.log(`  风功率密度完成(峰值 ${Math.round(peak)} W/m²)`);
     }
 
     // meta:网格形状 + 变量清单(前端据此懒加载)

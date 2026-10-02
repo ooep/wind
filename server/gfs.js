@@ -60,15 +60,16 @@ const VARS = {
 };
 
 /* 气压层变量(按需摄取):该层的风/温/湿 + 位势高度 */
-const LEVELS = [925, 850, 700, 500, 300, 250, 200, 150, 100];
+const LEVELS = [925, 850, 700, 500, 300, 250, 200, 150, 100, 70, 10]; // 平流层延伸至 10 hPa(nullschool 同款深度)
 function levelVars(level) {
-  return {
+  const cfg = {
     u: { grib: 'UGRD', level: `${level} mb`, scale: 100, conv: (v) => v },
     v: { grib: 'VGRD', level: `${level} mb`, scale: 100, conv: (v) => v },
     temp: { grib: 'TMP', level: `${level} mb`, scale: 100, conv: (v) => v - 273.15 },
-    rh: { grib: 'RH', level: `${level} mb`, scale: 100, conv: (v) => v },
     h: { grib: 'HGT', level: `${level} mb`, scale: 1, conv: (v) => v },
   };
+  if (level >= 100) cfg.rh = { grib: 'RH', level: `${level} mb`, scale: 100, conv: (v) => v }; // GFS 湿度仅到 100 hPa
+  return cfg;
 }
 
 /* ---------------- HTTP 基础 ---------------- */

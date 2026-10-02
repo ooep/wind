@@ -57,30 +57,41 @@ def fetch_day(d: date, out_tmp: str) -> str | None:
     return None
 
 
-def decode(path: str) -> np.ndarray:
-    """文件 → 144×73 °C 网格(行 0 = 90N,列 0 = 0E)"""
+def decode(path: str):
+    """文件 → (sst, ssta) 两个 144×73 °C 网格(行 0 = 90N,列 0 = 0E);距平变量缺失时 ssta 为 None"""
     with Dataset(path) as ds:
-        sst = ds["sst"]
-        arr = sst[:]  # 自动 scale/offset → °C;维度 (time, zlev, lat, lon)
+        arr = ds["sst"][:]  # 自动 scale/offset → °C;维度 (time, zlev, lat, lon)
         if np.ma.isMaskedArray(arr):
             arr = arr.filled(np.nan)
         grid = np.asarray(arr[0, 0], dtype=np.float64)
+        try:
+            an = ds["anom"][:]  # OISST v2.1 自带:相对 1991-2020 气候态的距平(nullschool SSTA 同源)
+            if np.ma.isMaskedArray(an):
+                an = an.filled(np.nan)
+            grid_a = np.asarray(an[0, 0], dtype=np.float64)
+        except (KeyError, IndexError):
+            grid_a = None
         lats = np.asarray(ds["lat"][:], dtype=np.float64)
         lons = np.asarray(ds["lon"][:], dtype=np.float64)
     if lats[0] < lats[-1]:
         grid = grid[::-1, :]  # 统一为 N→S
+        if grid_a is not None:
+            grid_a = grid_a[::-1, :]
         lats = lats[::-1]
 
-    out = np.full((NJ, NI), np.nan)
-    for j in range(NJ):
-        target_lat = 90.0 - j * 0.5
-        si = int(np.clip(round((lats[0] - target_lat) / 0.25), 0, len(lats) - 1))
-        row = grid[si]
-        for i in range(NI):
-            target_lon = i * 0.5
-            sj = int(round(((target_lon - lons[0]) % 360) / 0.25)) % len(lons)
-            out[j, i] = row[sj]
-    return out
+    def sample(g):
+        out = np.full((NJ, NI), np.nan)
+        for j in range(NJ):
+            target_lat = 90.0 - j * 0.5
+            si = int(np.clip(round((lats[0] - target_lat) / 0.25), 0, len(lats) - 1))
+            row = g[si]
+            for i in range(NI):
+                target_lon = i * 0.5
+                sj = int(round(((target_lon - lons[0]) % 360) / 0.25)) % len(lons)
+                out[j, i] = row[sj]
+        return out
+
+    return sample(grid), (sample(grid_a) if grid_a is not None else None)
 
 
 def main():
@@ -99,16 +110,25 @@ def main():
         sys.exit("OISST 连续 3 日均不可用,放弃")
 
     days.sort(key=lambda x: x[0])  # 时间升序
-    frames, times = [], []
+    frames, frames_a, times = [], [], []
     for d, path in days:
-        frames.append(decode(path))
+        s, a = decode(path)
+        frames.append(s)
+        frames_a.append(a)
         times.append(d.strftime("%Y-%m-%dT12:00"))
-        print(f"  [sst] 已解码 {d}(海温 {np.nanmin(frames[-1]):.1f}~{np.nanmax(frames[-1]):.1f} °C)")
+        print(f"  [sst] 已解码 {d}(海温 {np.nanmin(s):.1f}~{np.nanmax(s):.1f} °C)")
 
     stack = np.stack(frames)  # (nT, NJ, NI)
     nT = stack.shape[0]
     q = np.where(np.isnan(stack), -32768, np.clip(np.round(stack * SCALE), -32767, 32767)).astype(np.int16)
     b64 = base64.b64encode(q.tobytes()).decode()
+    have_a = all(a is not None for a in frames_a)
+    b64_a = None
+    if have_a:
+        stack_a = np.stack(frames_a)
+        q_a = np.where(np.isnan(stack_a), -32768, np.clip(np.round(stack_a * SCALE), -32767, 32767)).astype(np.int16)
+        b64_a = base64.b64encode(q_a.tobytes()).decode()
+        print(f"  [sst] 海温距平完成({np.nanmin(stack_a):.2f}~{np.nanmax(stack_a):.2f} °C)")
 
     latest = days[-1][0]
     run_key = latest.strftime("%Y%m%d") + "-00"
@@ -122,12 +142,18 @@ def main():
         "grid": {"ni": NI, "nj": NJ, "lon0": 0, "dlon": 0.5, "lat0": 90, "dlat": 0.5},
         "vars": {"sst": {"scale": SCALE, "file": "v_sst.json"}},
     }
+    if have_a:
+        meta["vars"]["ssta"] = {"scale": SCALE, "file": "v_ssta.json"}
     with open(os.path.join(out_dir, "meta.json"), "w") as f:
         json.dump(meta, f)
     with open(os.path.join(out_dir, "v_sst.json"), "w") as f:
         json.dump({"scale": SCALE, "data": b64}, f)
+    if have_a:
+        with open(os.path.join(out_dir, "v_ssta.json"), "w") as f:
+            json.dump({"scale": SCALE, "data": b64_a}, f)
     mb = os.path.getsize(os.path.join(out_dir, "v_sst.json")) / 1e6
-    print(f"  [sst] ocean_raw/{run_key} 完成:{nT} 帧,v_sst.json {mb:.2f} MB")
+    extra = f" + v_ssta.json {os.path.getsize(os.path.join(out_dir, 'v_ssta.json')) / 1e6:.2f} MB" if have_a else ""
+    print(f"  [sst] ocean_raw/{run_key} 完成:{nT} 帧,v_sst.json {mb:.2f} MB{extra}")
 
 
 if __name__ == "__main__":

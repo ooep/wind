@@ -40,6 +40,8 @@ jobs:
             .cache/gfsraw-l200
             .cache/gfsraw-l150
             .cache/gfsraw-l100
+            .cache/gfsraw-l70
+            .cache/gfsraw-l10
           key: ingest-gfs_raw-latest
           restore-keys: ingest-gfs_raw-
 
@@ -62,6 +64,8 @@ jobs:
             .cache/gfsraw-l200
             .cache/gfsraw-l150
             .cache/gfsraw-l100
+            .cache/gfsraw-l70
+            .cache/gfsraw-l10
           key: ingest-gfs_raw-latest-${{ github.run_id }}
 
       - name: 上传数据产物(deploy-data 工作流统一组装部署,数据不再提交 main)

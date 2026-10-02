@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, gphCmap } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, gphCmap } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -12,6 +12,7 @@ import { GlobeView } from './globe.js';
 import { SatelliteLayer } from './layers/satellite.js';
 import { SnowCoverLayer } from './layers/snowcover.js';
 import { LightningLayer } from './layers/lightning.js';
+import { AuroraLayer } from './layers/aurora.js';
 import { TropicalLayer } from './layers/tropical.js';
 import { StationLayer } from './layers/stations.js';
 import { Timeline } from './timeline.js';
@@ -59,6 +60,9 @@ const ICONS = {
   wve: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 18c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M13.5 2.5 7.5 10.5h3.6L9.5 17l6.8-8.5h-3.7l1.6-6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   fog: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 9h13M2.5 12.5h16M5 16h12M9 19.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   fire: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2.8c1.2 3.4 4.4 4.6 4.4 8.6a4.4 4.4 0 0 1-8.8 0c0-1.5.6-2.8 1.5-4 .3 1 .9 1.8 1.9 2.3C10.6 7 10.8 4.6 12 2.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 18.5c1.1 1 2.3 1.5 3.5 1.5s2.4-.5 3.5-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/></svg>',
+  wpd: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 21v-8.2M12 12.8 5.8 9.2M12 12.8l6.2-3.6M12 12.8V4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12.8" r="1.5" fill="currentColor"/></svg>',
+  ssta: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 16.5c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 10.5V5.2a2 2 0 0 1 4 0v5.3a3 3 0 1 1-4 0z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 13.6v-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".8"/></svg>',
+  aurora: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 14c2-5.5 3.6-5.5 5.5 0s3.6 5.5 5.5 0 3.4-5.2 7 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4.5 19c1.8-4 3.2-4 5 0s3.2 4 5 0 2.8-3.8 5.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>',
   gph: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 19c0-5 4-9 8-9s8 4 8 9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 19c0-3 2-5.5 4.5-5.5s4.5 2.5 4.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.75"/><path d="M10.5 19c0-1 .7-1.8 1.5-1.8s1.5.8 1.5 1.8" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/><path d="M3.5 21h17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   precip24: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   precip72: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
@@ -105,6 +109,8 @@ const LAYERS = [
   { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
   { id: 'soilt', label: '土壤温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'soilt', fmt: (v) => String(Math.round(convV('temp', v))), models: ['gfs_raw'] },
   { id: 'fire', label: '火险', unit: 'CBI', cmap: FIRE, variable: 'fire', fmt: (v) => (v >= 97.5 ? '极端' : v >= 90 ? '很高' : v >= 75 ? '高' : v >= 50 ? '中' : v >= 20 ? '低' : '—'), models: ['gfs_raw'] },
+  { id: 'wpd', label: '风功率密度', unit: 'W/m²', cmap: WPD, variable: 'wpd', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
+  { id: 'ssta', label: '海温距平', unit: '°C', cmap: SSTA, variable: 'ssta', fmt: (v) => (v > 0 ? '+' : '') + (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1)), models: ['ocean_raw'], maskLand: true },
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
   { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
@@ -126,14 +132,14 @@ const LAYERS = [
 /* 分组(手风琴):图层按钮按组分节收纳,对齐 Windy 的导航结构 */
 const GROUPS = [
   { id: 'obs', label: '观测', layers: ['radar'] },
-  { id: 'wind', label: '风', layers: ['wind', 'gust', 'barbs'] },
+  { id: 'wind', label: '风', layers: ['wind', 'gust', 'barbs', 'wpd'] },
   { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl'] },
   { id: 'cloud', label: '云雨', layers: ['cloud', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
   { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure', 'gph'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
   { id: 'fire', label: '火险', layers: ['fire'] },
-  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst'] },
+  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst', 'ssta'] },
   { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
 ];
 
@@ -150,7 +156,7 @@ function varNeeds(def) {
 const layerById = (id) => LAYERS.find((l) => l.id === id);
 
 /* 图层色标(位势高度按当前气压层取对应色标)与等值线间距 gpm */
-const GPH_INT = { 925: 30, 850: 40, 700: 50, 500: 60, 300: 90, 250: 120, 200: 120, 150: 160, 100: 200 };
+const GPH_INT = { 925: 30, 850: 40, 700: 50, 500: 60, 300: 90, 250: 120, 200: 120, 150: 160, 100: 200, 70: 240, 10: 320 };
 function layerCmap(def) {
   return def.id === 'gph' ? gphCmap(state.level || 500) : def.cmap;
 }
@@ -168,7 +174,7 @@ function needsFor(def) {
 const LEVEL_LAYERS = new Set(['wind', 'barbs', 'temp', 'humidity', 'gph']);
 // 海浪/海温模式的图层白名单:该模式仅提供各自要素
 const WAVE_ONLY = new Set(['wvh', 'wvp']);
-const OCEAN_ONLY = new Set(['sst']);
+const OCEAN_ONLY = new Set(['sst', 'ssta']);
 function layerAvailable(def, model) {
   if (def.models) return def.models.includes(model);
   if (model === 'waves_raw') return WAVE_ONLY.has(def.id);
@@ -202,7 +208,7 @@ const state = {
   basemap: urlState.bm || 'vector',
   level: num(urlState.lv, 0),
   opacity: Math.min(1, Math.max(0.35, num(urlState.op, 100) / 100)),
-  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations', 'snowcover'].includes(x))),
+  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations', 'snowcover', 'aurora'].includes(x))),
   grid: null,
   gridKey: '',
   fetchingKey: '',
@@ -258,6 +264,7 @@ const isobars = new IsobarLayer(map);
 const radar = new RadarLayer(map);
 const satellite = new SatelliteLayer(map);
 const lightning = new LightningLayer(map);
+const aurora = new AuroraLayer(map);
 const tropical = new TropicalLayer(map);
 const stations = new StationLayer(map);
 const snowCover = new SnowCoverLayer(map);
@@ -446,6 +453,8 @@ const OVERLAYS = [
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M6 6a8.5 8.5 0 0 0 0 12M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>' },
   { id: 'snowcover', label: '雪盖', title: '雪盖观测:NASA VIIRS NDSI 日产品(卫星反演雪盖范围,每日更新)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3v18M5.5 6.2l13 11.6M5.5 17.8l13-11.6M12 6.5l-1.8-1.8M12 6.5l1.8-1.8M12 17.5l-1.8 1.8M12 17.5l1.8 1.8M5 12H3.2M5 12l-1.3 1.4M5 12 3.7 10.6M19 12h1.8M19 12l1.3 1.4M19 12l-1.3-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' },
+  { id: 'aurora', label: '极光', title: 'NOAA SWPC OVATION 极光概率(未来 30-90 分钟,每 30 分钟更新)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 14c2-5.5 3.6-5.5 5.5 0s3.6 5.5 5.5 0 3.4-5.2 7 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4.5 19c1.8-4 3.2-4 5 0s3.2 4 5 0 2.8-3.8 5.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>' },
 ];
 const overlayBtnBox = document.getElementById('overlay-buttons');
 const satChannelWrap = document.getElementById('sat-channel-wrap');
@@ -472,6 +481,7 @@ function toggleOverlay(id, on, silent) {
   else if (id === 'tropical') tropical.show(on);
   else if (id === 'stations') stations.show(on);
   else if (id === 'snowcover') snowCover.show(on);
+  else if (id === 'aurora') aurora.show(on);
   document.getElementById(`ov-${id}`)?.classList.toggle('active', on);
   if (!silent) syncUrl();
 }
@@ -869,6 +879,7 @@ const LEVELS_UI = [
   { v: 0, label: '表面' }, { v: 925, label: '925' }, { v: 850, label: '850' },
   { v: 700, label: '700' }, { v: 500, label: '500' }, { v: 300, label: '300' },
   { v: 250, label: '250' }, { v: 200, label: '200' }, { v: 150, label: '150' }, { v: 100, label: '100' },
+  { v: 70, label: '70' }, { v: 10, label: '10' },
 ];
 const levelBar = document.getElementById('levelbar');
 function updateLevelBar() {
@@ -906,7 +917,7 @@ window.__currentModelLabel = MODEL_LABELS[state.model];
 window.__state = state; window.__globe = globe; // 调试钩子
 window.__applyGrid = (data, key) => applyGrid(data instanceof Grid ? data : new Grid(data), key || 'debug'); // 调试钩子:可注入格点数据
 window.__app_map = map;
-window.__app_overlays = { lightning, satellite, tropical, stations }; // 调试钩子:叠加层状态
+window.__app_overlays = { lightning, satellite, tropical, stations, aurora }; // 调试钩子:叠加层状态
 /* 静态模式:模型选择器只保留静态包里实际存在的模式 */
 staticAvailableModels().then((avail) => {
   if (!avail || avail.includes(state.model)) return;
