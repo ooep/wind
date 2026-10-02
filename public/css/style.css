@@ -33,6 +33,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 #overlay-root canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #overlay-root canvas#landfill-canvas { z-index: 0; }  /* 深色底图陆地填充:气象层之下 */
 #overlay-root canvas#scalar-canvas { z-index: 1; }
+#overlay-root canvas#oceanmask-canvas { z-index: 1; }  /* 与 scalar 同层:DOM 顺序在后 → 填色之上、粒子之下 */
 #overlay-root canvas#particle-canvas { z-index: 2; }
 #overlay-root canvas#isobar-canvas { z-index: 3; }
 #overlay-root canvas#vecbase-canvas { z-index: 4; }  /* 矢量线划底图:气象层之上,空白透明 */

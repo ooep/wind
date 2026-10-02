@@ -30,7 +30,7 @@ BASE = ("https://www.ncei.noaa.gov/data/sea-surface-temperature-optimum-interpol
         "/v2.1/access/avhrr/{ym}/oisst-avhrr-v02r01.{ymd}{suffix}.nc")
 UA = {"User-Agent": "fy-earth-sst/1.0 (weather viz; contact: repo owner)"}
 
-NI, NJ = 144, 73          # 0.5° 全球粗网格 0..357.5 / 90..-90
+NI, NJ = 720, 361         # 0.5° 全球网格 0..359.5 / 90..-90(海岸细节,配合前端陆地遮罩)
 SCALE = 100               # 0.01°C 量化
 
 
@@ -73,12 +73,13 @@ def decode(path: str) -> np.ndarray:
 
     out = np.full((NJ, NI), np.nan)
     for j in range(NJ):
-        target_lat = 90.0 - j * 2.5
+        target_lat = 90.0 - j * 0.5
         si = int(np.clip(round((lats[0] - target_lat) / 0.25), 0, len(lats) - 1))
+        row = grid[si]
         for i in range(NI):
-            target_lon = i * 2.5
+            target_lon = i * 0.5
             sj = int(round(((target_lon - lons[0]) % 360) / 0.25)) % len(lons)
-            out[j, i] = grid[si, sj]
+            out[j, i] = row[sj]
     return out
 
 
@@ -118,7 +119,7 @@ def main():
     meta = {
         "model": "ocean_raw", "runKey": run_key,
         "times": times, "generated": generated, "format": "per-var",
-        "grid": {"ni": NI, "nj": NJ, "lon0": 0, "dlon": 2.5, "lat0": 90, "dlat": 2.5},
+        "grid": {"ni": NI, "nj": NJ, "lon0": 0, "dlon": 0.5, "lat0": 90, "dlat": 0.5},
         "vars": {"sst": {"scale": SCALE, "file": "v_sst.json"}},
     }
     with open(os.path.join(out_dir, "meta.json"), "w") as f:

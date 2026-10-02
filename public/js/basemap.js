@@ -190,7 +190,7 @@ export class VectorBasemap {
 /* 陆地填充(深色底图):烘焙的 land-50m 多边形(0.83MB 本地文件,无外部瓦片依赖)。
  * canvas 位于 overlay-root z=0 —— 气象填色层之下、地图瓦片之上;卫星/地形模式下隐藏。 */
 let landPromise = null;
-function loadLand() {
+export function loadLand() {
   if (!landPromise) {
     landPromise = fetch(new URL('../geo/land-50m.json', import.meta.url))
       .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); });

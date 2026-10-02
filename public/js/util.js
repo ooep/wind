@@ -93,15 +93,83 @@ export class Grid {
     const j0 = Math.floor(y); const j1 = Math.min(j0 + 1, this.rows - 1);
     const tx = x - i0, ty = y - j0;
     const C = this.cols;
-    const a0 = fr.i0 * this.P, a1 = fr.i1 * this.P;
+    const a = fr.i0 * this.P, b = fr.i1 * this.P;
     const r0 = j0 * C, r1 = j1 * C;
-    const v00 = arr[a0 + r0 + i0], v10 = arr[a0 + r0 + i1];
-    const v01 = arr[a0 + r1 + i0], v11 = arr[a0 + r1 + i1];
-    const w00 = arr[a1 + r0 + i0], w10 = arr[a1 + r0 + i1];
-    const w01 = arr[a1 + r1 + i0], w11 = arr[a1 + r1 + i1];
+    const v00 = arr[a + r0 + i0], v10 = arr[a + r0 + i1];
+    const v01 = arr[a + r1 + i0], v11 = arr[a + r1 + i1];
+    const w00 = arr[b + r0 + i0], w10 = arr[b + r0 + i1];
+    const w01 = arr[b + r1 + i0], w11 = arr[b + r1 + i1];
     if (Number.isNaN(v00 + v10 + v01 + v11)) return NaN;
     const top = lerp(lerp(v00, v10, tx), lerp(v01, v11, tx), ty);
     if (fr.i0 === fr.i1) return top;
+    if (Number.isNaN(w00 + w10 + w01 + w11)) return top;
+    const bot = lerp(lerp(w00, w10, tx), lerp(w01, w11, tx), ty);
+    return lerp(top, bot, fr.f);
+  }
+
+  /* 海洋图层专用:NaN 格点用最近有效格值外推(多源 BFS,4 邻接含经度环绕)。
+   * 陆地随后由高精度多边形画布遮盖,外推只负责把填色平滑延续到海岸线,
+   * 消除粗网格海岸处的锯齿空穴。按 变量:帧 懒加载缓存。 */
+  extendedVar(varName, fi) {
+    this._ext = this._ext || {};
+    const key = varName + ':' + fi;
+    if (this._ext[key]) return this._ext[key];
+    const src = this.vars[varName];
+    if (!src) return null;
+    const P = this.P, C = this.cols, R = this.rows;
+    const out = new Float32Array(P);
+    const dist = new Int32Array(P).fill(-1);
+    const q = new Int32Array(P);
+    let qh = 0, qt = 0;
+    const off = fi * P;
+    for (let i = 0; i < P; i++) {
+      const v = src[off + i];
+      if (!Number.isNaN(v)) { out[i] = v; dist[i] = 0; q[qt++] = i; }
+    }
+    if (qt === 0) return null; // 整帧无有效值(如视口全为陆地)→ 调用方按 NaN 处理
+    while (qh < qt) {
+      const i = q[qh++];
+      const row = (i / C) | 0, col = i - row * C;
+      for (let k = 0; k < 4; k++) {
+        let j;
+        if (k === 0) { if (row === 0) continue; j = i - C; }
+        else if (k === 1) { if (row === R - 1) continue; j = i + C; }
+        else if (k === 2) j = row * C + (col + C - 1) % C;
+        else j = row * C + (col + 1) % C;
+        if (dist[j] === -1) { dist[j] = dist[i] + 1; out[j] = out[i]; q[qt++] = j; }
+      }
+    }
+    this._ext[key] = out;
+    return out;
+  }
+
+  /* 外推场采样(海洋图层):两帧各自外推后线性插值。外推数组为单帧布局(偏移 0) */
+  sampleExt(varName, lon, lat, fr) {
+    const a0 = this.extendedVar(varName, fr.i0);
+    if (!a0) return NaN;
+    let x = (lon - this.lon0) / this.step;
+    let i0, i1;
+    if (this.wrapLon) {
+      x = ((x % this.cols) + this.cols) % this.cols;
+      i0 = Math.floor(x) % this.cols;
+      i1 = (i0 + 1) % this.cols;
+    } else {
+      x = clamp(x, 0, this.cols - 1e-4);
+      i0 = Math.floor(x); i1 = Math.min(i0 + 1, this.cols - 1);
+    }
+    let y = clamp((this.lat0 - lat) / this.step, 0, this.rows - 1e-4);
+    const j0 = Math.floor(y); const j1 = Math.min(j0 + 1, this.rows - 1);
+    const tx = x - i0, ty = y - j0;
+    const C = this.cols, r0 = j0 * C, r1 = j1 * C;
+    const v00 = a0[r0 + i0], v10 = a0[r0 + i1];
+    const v01 = a0[r1 + i0], v11 = a0[r1 + i1];
+    if (Number.isNaN(v00 + v10 + v01 + v11)) return NaN;
+    const top = lerp(lerp(v00, v10, tx), lerp(v01, v11, tx), ty);
+    if (fr.i0 === fr.i1) return top;
+    const a1 = this.extendedVar(varName, fr.i1);
+    if (!a1) return top;
+    const w00 = a1[r0 + i0], w10 = a1[r0 + i1];
+    const w01 = a1[r1 + i0], w11 = a1[r1 + i1];
     if (Number.isNaN(w00 + w10 + w01 + w11)) return top;
     const bot = lerp(lerp(w00, w10, tx), lerp(w01, w11, tx), ty);
     return lerp(top, bot, fr.f);

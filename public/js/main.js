@@ -95,14 +95,14 @@ const LAYERS = [
   { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
   { id: 'soilt', label: '土壤温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'soilt', fmt: (v) => String(Math.round(convV('temp', v))), models: ['gfs_raw'] },
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
-  { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
-  { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
-  { id: 'swvh', label: '涌浪高度', unit: 'm', cmap: WAVES, variable: 'swvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
-  { id: 'swvp', label: '涌浪周期', unit: 's', cmap: WPER, variable: 'swvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
-  { id: 'wwh', label: '风浪高度', unit: 'm', cmap: WAVES, variable: 'wwh', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
-  { id: 'wwp', label: '风浪周期', unit: 's', cmap: WPER, variable: 'wwp', fmt: (v) => v.toFixed(1), models: ['waves_raw'] },
-  { id: 'wve', label: '波浪能量', unit: 'kW/m', cmap: WENERGY, variable: 'wve', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))), models: ['waves_raw'] },
-  { id: 'sst', label: '海温', unit: '°C', cat: 'temp', cmap: SST, variable: 'sst', fmt: (v) => { const c = convV('temp', v); return Math.abs(c) < 1 ? c.toFixed(1) : String(Math.round(c)); }, models: ['ocean_raw'] },
+  { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'swvh', label: '涌浪高度', unit: 'm', cmap: WAVES, variable: 'swvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'swvp', label: '涌浪周期', unit: 's', cmap: WPER, variable: 'swvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'wwh', label: '风浪高度', unit: 'm', cmap: WAVES, variable: 'wwh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'wwp', label: '风浪周期', unit: 's', cmap: WPER, variable: 'wwp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
+  { id: 'wve', label: '波浪能量', unit: 'kW/m', cmap: WENERGY, variable: 'wve', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))), models: ['waves_raw'], maskLand: true },
+  { id: 'sst', label: '海温', unit: '°C', cat: 'temp', cmap: SST, variable: 'sst', fmt: (v) => { const c = convV('temp', v); return Math.abs(c) < 1 ? c.toFixed(1) : String(Math.round(c)); }, maskLand: true, models: ['ocean_raw'] },
   { id: 'aqi', label: '空气质量', unit: 'AQI', cmap: AQI, special: 'aqi', aqField: 'a', fmt: (v) => Math.round(v) },
   { id: 'pm25', label: 'PM2.5', unit: 'μg/m³', cmap: PM25, special: 'aqi', aqField: 'p', fmt: (v) => Math.round(v) },
   { id: 'pm10', label: 'PM10', unit: 'μg/m³', cmap: PM25, special: 'aqi', aqField: 'p10', fmt: (v) => Math.round(v) },
@@ -212,6 +212,7 @@ const OPENTOPO_URL = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
 
 function setBasemap(kind) {
   state.basemap = kind;
+  map.fire('basemapchange', { kind });
   syncUrl();
   if (satLayer) { map.removeLayer(satLayer); satLayer = null; }
   /* 深色 = 本地陆地填充(零外部依赖);卫星/地形 = 外部影像瓦片;线划均叠加其上 */
@@ -357,6 +358,7 @@ async function setLayer(id, silent = false) {
   if (!isRadar && !isAqi && !isBarbs) {
     scalar.show(true);
     scalar.setVar(def.variable, def.cmap);
+    scalar.setMaskLand(!!def.maskLand);
   } else {
     scalar.show(false);
   }

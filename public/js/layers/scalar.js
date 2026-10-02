@@ -1,7 +1,19 @@
-/* 标量填色层:把格点数据按色标渲染为平滑填色(块采样 + 双线性放大) */
+/* 标量填色层:把格点数据按色标渲染为平滑填色(块采样 + 双线性放大)。
+ * 海洋图层(maskLand)模式:NaN 格点用最近海值外推把填色延续到海岸线,
+ * 再以独立画布把 land-50m 陆地多边形盖在填色之上 —— 陆地干净遮除、
+ * 海洋色块紧贴大陆线,消除粗网格海岸处的锯齿空穴(对齐 Windy 的做法)。 */
 import { getView } from '../util.js';
+import { loadLand } from '../basemap.js?v=2';
 
 const BLOCK = 3; // 屏幕采样块大小(css px)
+
+/* 各底图下陆地遮罩的颜色:与底图自身的陆地观感一致,遮罩才"隐形" */
+const MASK_COLORS = {
+  vector: '#06080c',
+  dark: '#132637',
+  satellite: '#06080c',
+  terrain: '#06080c',
+};
 
 export class ScalarLayer {
   constructor(map) {
@@ -12,14 +24,24 @@ export class ScalarLayer {
     this.ctx = this.canvas.getContext('2d');
     this.off = document.createElement('canvas');
     this.offCtx = this.off.getContext('2d');
+    /* 陆地遮罩画布:z 序在 scalar 之上(DOM 顺序)、粒子/等压线之下;不受图层不透明度影响 */
+    this.maskCanvas = document.createElement('canvas');
+    this.maskCanvas.id = 'oceanmask-canvas';
+    this.maskCanvas.style.display = 'none';
+    document.getElementById('overlay-root').appendChild(this.maskCanvas);
+    this.maskCtx = this.maskCanvas.getContext('2d');
+    this.rings = null;
     this.grid = null;
     this.varName = 'temp';
     this.cmap = null;
     this.fr = { i0: 0, i1: 0, f: 0 };
     this.visible = false;
     this.opacity = 1;
+    this.maskLand = false;
+    this.maskColor = MASK_COLORS.vector;
 
     map.on('move zoom resize viewreset', () => this.redraw());
+    map.on('basemapchange', (e) => { this.maskColor = MASK_COLORS[e.kind] || MASK_COLORS.vector; if (this.maskLand) this.redraw(); });
   }
 
   setGrid(grid) { this.grid = grid; this.redraw(); }
@@ -27,10 +49,23 @@ export class ScalarLayer {
     this.varName = name; this.cmap = cmap;
     this.redraw();
   }
+  /* 海洋图层开关:切换外推采样与陆地遮罩 */
+  setMaskLand(on) {
+    on = !!on;
+    if (this.maskLand === on) { if (on) this.redraw(); return; }
+    this.maskLand = on;
+    this.maskCanvas.style.display = on && this.visible ? 'block' : 'none';
+    if (on && !this.rings) {
+      loadLand().then((d) => { this.rings = d.rings; this.redraw(); })
+        .catch((e) => console.error('[scalar] 陆地遮罩数据失败:', e.message));
+    }
+    this.redraw();
+  }
   setFrame(fr) { this.fr = fr; this.redraw(); }
   show(on) {
     this.visible = on;
     this.canvas.style.opacity = on ? this.opacity : 0;
+    this.maskCanvas.style.display = on && this.maskLand ? 'block' : 'none';
     if (on) this.redraw();
   }
   setOpacity(v) {
@@ -46,6 +81,9 @@ export class ScalarLayer {
     if (this.canvas.width !== W || this.canvas.height !== H) {
       this.canvas.width = W; this.canvas.height = H;
     }
+    if (this.maskCanvas.width !== W || this.maskCanvas.height !== H) {
+      this.maskCanvas.width = W; this.maskCanvas.height = H;
+    }
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
@@ -58,6 +96,7 @@ export class ScalarLayer {
     const img = this.offCtx.createImageData(bw, bh);
     const px = img.data;
     const grid = this.grid, varName = this.varName, fr = this.fr, cmap = this.cmap;
+    const ext = this.maskLand;
 
     // 预计算每个块中心对应的经纬度
     const lats = new Float64Array(bh);
@@ -75,7 +114,7 @@ export class ScalarLayer {
     for (let r = 0; r < bh; r++) {
       const lat = lats[r];
       for (let c = 0; c < bw; c++, o += 4) {
-        const v = grid.sample(varName, lons[c], lat, fr);
+        const v = ext ? grid.sampleExt(varName, lons[c], lat, fr) : grid.sample(varName, lons[c], lat, fr);
         if (Number.isNaN(v)) continue;
         const col = cmap.color(v);
         px[o] = col[0]; px[o + 1] = col[1]; px[o + 2] = col[2]; px[o + 3] = col[3];
@@ -86,5 +125,39 @@ export class ScalarLayer {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(this.off, 0, 0, bw, bh, 0, 0, W, H);
+
+    if (ext) this.drawLandMask(view, dpr, W, H);
+  }
+
+  /* 陆地遮罩:land-50m 多边形按当前视图填充(带 bbox 剔除) */
+  drawLandMask(view, dpr, W, H) {
+    const ctx = this.maskCtx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (!this.rings) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const c0 = view.containerToLatLng(0, 0), c1 = view.containerToLatLng(view.w, view.h);
+    const c2 = view.containerToLatLng(view.w, 0), c3 = view.containerToLatLng(0, view.h);
+    let minLon = Math.min(c0.lng, c1.lng, c2.lng, c3.lng);
+    let maxLon = Math.max(c0.lng, c1.lng, c2.lng, c3.lng);
+    if (maxLon - minLon >= 359) { minLon = -180; maxLon = 180; }
+    const minLat = Math.min(c0.lat, c1.lat, c2.lat, c3.lat);
+    const maxLat = Math.max(c0.lat, c1.lat, c2.lat, c3.lat);
+
+    ctx.fillStyle = this.maskColor;
+    for (const ring of this.rings) {
+      const [rLon0, rLat0, rLon1, rLat1] = ring.b;
+      if (rLon1 < minLon - 1 || rLon0 > maxLon + 1 || rLat1 < minLat - 1 || rLat0 > maxLat + 1) continue;
+      ctx.beginPath();
+      const r = ring.r;
+      for (let i = 0; i < r.length; i += 2) {
+        const pt = view.latLngToContainer(r[i + 1], r[i]);
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 }

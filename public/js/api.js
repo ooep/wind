@@ -53,7 +53,8 @@ const staticMetas = new Map(); // model -> meta
 async function staticIndexGet() {
   if (staticIndex.data && Date.now() - staticIndex.fetchedAt < 10 * 60e3) return staticIndex.data;
   if (!staticIndex.promise) {
-    staticIndex.promise = fetch(`${STATIC_BASE}/index.json`).then((r) => {
+    /* no-cache:每次会话协商复验(ETag/304),部署后立即可见新 run,又不必整包重下 */
+    staticIndex.promise = fetch(`${STATIC_BASE}/index.json`, { cache: 'no-cache' }).then((r) => {
       if (!r.ok) throw new Error(`静态数据索引 ${r.status}`);
       return r.json();
     }).then((d) => { staticIndex.data = d; staticIndex.fetchedAt = Date.now(); return d; })
