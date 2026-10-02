@@ -40,5 +40,34 @@ fetch_model "update-ecmwf.yml" "ecmwf_raw"
 fetch_model "update-aifs.yml"  "aifs_raw"
 fetch_model "update-waves.yml" "waves_raw"
 
+# 观测类:一个 artifact 打包 obs/tropical/aq 三个目录(与 NWP 模式单独目录不同)
+fetch_obs() {
+  local rid
+  rid=$(gh run list --repo "$REPO" --workflow=update-obs.yml --status=success -L 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+  if [ -z "$rid" ]; then
+    echo "[obs] 无成功的 data run,保留仓库内数据"
+    return 0
+  fi
+  echo "[obs] 下载 run $rid 的产物 data-obs"
+  rm -rf /tmp/art_obs
+  if ! gh run download "$rid" --repo "$REPO" --name "data-obs" --dir /tmp/art_obs 2>/dev/null; then
+    echo "[obs] 产物下载失败,保留仓库内数据"
+    return 0
+  fi
+  local ok=0
+  for sub in obs tropical aq; do
+    if [ -d "/tmp/art_obs/$sub" ]; then
+      rm -rf "dist/data/$sub"
+      cp -r "/tmp/art_obs/$sub" "dist/data/$sub"
+      ok=1
+    fi
+  done
+  if [ "$ok" = 1 ]; then echo "[obs] 已更新到 run 产物"; else echo "[obs] 产物内容异常,保留仓库内数据"; fi
+  local aid
+  aid=$(gh api "repos/$REPO/actions/runs/$rid/artifacts" --jq '.artifacts[] | select(.name=="data-obs") | .id' 2>/dev/null || true)
+  if [ -n "$aid" ]; then gh api -X DELETE "repos/$REPO/actions/artifacts/$aid" >/dev/null 2>&1 || true; fi
+}
+fetch_obs
+
 # 重建全局 index.json(按各模式现有产物)
 node tools/build-static.js --out dist/data --index-only
