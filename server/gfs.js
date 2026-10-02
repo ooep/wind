@@ -2,7 +2,8 @@
  * NOAA GFS 原始数据管道(自建,无 key、无配额)
  *
  * 数据源:AWS 开放数据桶 noaa-gfs-bdp-pds(NOAA 官方发布)
- * 结构:地面引擎(11 变量:风/温/湿/气压/降水/云/阵风/能见度/雪深/CAPE)
+ * 结构:地面引擎(21 变量:风/温/湿/气压/降水/云量三层/阵风/能见度/雪深/CAPE/可降水/云水/
+ *       土壤湿温/冻结高度/CIN/新雪)
  *       + 气压层引擎(925/850/700/500/300 hPa 的风/温/湿,按需摄取)
  * 流程:run 发现 → 索引定位 → Range 下载 → 自研 GRIB2 解码 → 单位换算
  *   → Int16 存储(内存 LRU + 磁盘捆包)→ 格点 / 点位采样接口。
@@ -38,6 +39,14 @@ const VARS = {
   cape: { grib: 'CAPE', level: 'surface', scale: 1, conv: (v) => v },          // J/kg
   pwat: { grib: 'PWAT', level: 'entire atmosphere (considered as a single layer)', scale: 10, conv: (v) => v },    // kg/m² ≡ mm
   cwat: { grib: 'CWAT', level: 'entire atmosphere (considered as a single layer)', scale: 100, conv: (v) => v },   // kg/m² ≡ mm
+  lcdc: { grib: 'LCDC', level: 'low cloud layer', scale: 100, conv: (v) => v },
+  mcdc: { grib: 'MCDC', level: 'middle cloud layer', scale: 100, conv: (v) => v },
+  hcdc: { grib: 'HCDC', level: 'high cloud layer', scale: 100, conv: (v) => v },
+  soilw: { grib: 'SOILW', level: '0-0.1 m below ground', scale: 10000, conv: (v) => v },     // 体积含水率 m³/m³(0-1)
+  soilt: { grib: 'TSOIL', level: '0-0.1 m below ground', scale: 100, conv: (v) => v - 273.15 },
+  frzlvl: { grib: 'HGT', level: '0C isotherm', scale: 1, conv: (v) => v },                   // 0°C 层高度 m
+  cin: { grib: 'CIN', level: 'surface', scale: 1, conv: (v) => v },                          // 对流抑制 J/kg(负值)
+  newsnow: { grib: 'WEASD', level: 'surface', scale: 10, conv: (v) => v },                   // 新雪:WEASD 差分 ×10(1mm 水 ≈ 1cm 雪),见 ingestOne
 };
 
 /* 气压层变量(按需摄取):该层的风/温/湿 */
@@ -170,6 +179,11 @@ class GfsEngine {
   stepFile(runKey, step) { return path.join(this.dir, runKey.replace('/', '-'), `m${String(step).padStart(3, '0')}.bin`); }
   doneFile(runKey, step) { return path.join(this.dir, runKey.replace('/', '-'), `m${String(step).padStart(3, '0')}.done`); }
   doneVars(runKey, step) {
+    // 捆包尺寸必须与当前变量布局一致,否则 .done 是旧布局的残留(变量集变更后失效)
+    try {
+      const sz = fs.statSync(this.stepFile(runKey, step)).size;
+      if (sz !== this.varKeys.length * NJ * NI * 2) return new Set();
+    } catch { return new Set(); }
     try { return new Set(JSON.parse(fs.readFileSync(this.doneFile(runKey, step), 'utf8'))); } catch { return new Set(); }
   }
 
@@ -245,13 +259,19 @@ class GfsEngine {
     return entry;
   }
 
-  prune() {
+  prune(protect = []) {
+    /* 保留最新的 2 个 run + 当前摄取计划引用的 run(历史时间窗的 P run 字典序更小,
+     * 若不显式保护会被当作旧目录删掉,导致静态包历史帧全为空) */
+    const keep = new Set(protect);
     let dirs = [];
     try { dirs = fs.readdirSync(this.dir).filter((d) => /^\d{8}-\d{2}$/.test(d)); } catch { return; }
-    dirs.sort();
-    while (dirs.length > 2) {
-      const old = dirs.shift();
-      fs.rmSync(path.join(this.dir, old), { recursive: true, force: true });
+    dirs.sort().reverse();
+    const kept = [];
+    for (const d of dirs) {
+      if (kept.length < 2 || keep.has(d)) kept.push(d);
+    }
+    for (const d of dirs) {
+      if (!kept.includes(d)) fs.rmSync(path.join(this.dir, d), { recursive: true, force: true });
     }
   }
 
@@ -329,7 +349,7 @@ class GfsEngine {
       this.run = runInfo;
       runInfo.loaded = true;
       runInfo.checkedAt = Date.now();
-      this.prune();
+      this.prune([plan.R.key.replace('/', '-'), plan.P ? plan.P.key.replace('/', '-') : null].filter(Boolean));
       return runInfo;
     })();
 
@@ -347,6 +367,35 @@ class GfsEngine {
     const hh = runKey.split('/')[1];
     const fileTag = `f${String(step).padStart(3, '0')}`;
     const url = `${S3}/gfs.${runKey}/atmos/gfs.t${hh}z.pgrb2.${RES}.${fileTag}`;
+
+    /* 新雪:WEASD 为地面积雪水当量(瞬时场),相邻时次正向差分 × 10 → 每 3h 新增积雪 cm */
+    if (varKey === 'newsnow') {
+      if (step === 0) {
+        this.writeVar(runKey, step, varKey, new Int16Array(NJ * NI));
+        return;
+      }
+      const prevTag = `f${String(step - STEP_H).padStart(3, '0')}`;
+      const prevUrl = `${S3}/gfs.${runKey}/atmos/gfs.t${hh}z.pgrb2.${RES}.${prevTag}`;
+      const cfgW = this.varCfg.newsnow;
+      const [recNow, recPrev] = await Promise.all([
+        getIdx(`${url}.idx`).then((recs) => pickMessage(recs, cfgW)),
+        getIdx(`${prevUrl}.idx`).then((recs) => pickMessage(recs, cfgW)),
+      ]);
+      if (!recNow || !recPrev) throw new Error(`idx 中未找到 newsnow(WEASD)@f${step}`);
+      const [msgNow, msgPrev] = await Promise.all([
+        fetchMessage(url, null, recNow),
+        fetchMessage(prevUrl, null, recPrev),
+      ]);
+      const out = new Int16Array(NJ * NI);
+      const vNow = msgNow.values, vPrev = msgPrev.values;
+      for (let i = 0; i < vNow.length; i++) {
+        const d = cfgW.conv((vNow[i] - vPrev[i]) * 10); // mm 水 → cm 雪
+        out[i] = Number.isNaN(d) ? SENTINEL : Math.max(0, Math.min(32767, Math.round(d * cfgW.scale)));
+      }
+      this.writeVar(runKey, step, varKey, out);
+      return;
+    }
+
     const recs = await getIdx(`${url}.idx`);
     const cfg = this.varCfg[varKey];
     const rec = pickMessage(recs, cfg);

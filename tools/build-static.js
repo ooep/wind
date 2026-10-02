@@ -3,15 +3,17 @@
  *
  * 用法:
  *   node tools/build-static.js --out dist/data --models gfs_raw [--tiles] [--tile-deg 20]
+ *   node tools/build-static.js --out dist/data --index-only
  *
- * 产物结构(上传到静态数据仓库 / Pages):
- *   {out}/index.json                    最新 run 指针
- *   {out}/{model}/{runKey}/meta.json    { model, runKey, times[], generated }
- *   {out}/{model}/{runKey}/global.json  全球 2.5° 粗网格(全部变量 × 全部时次,Float32 base64)
- *   {out}/{model}/{runKey}/t_{c}_{r}.json  0.5° 区域分块(--tiles 时生成)
+ * 产物结构(per-var 格式,变量按需加载,避免全球单包过大):
+ *   {out}/index.json                    最新 run 指针(format: per-var)
+ *   {out}/{model}/{runKey}/meta.json    { model, runKey, times[], grid{ni,nj,lon0,dlon,lat0,dlat}, vars{vk:{scale,file}} }
+ *   {out}/{model}/{runKey}/v_{var}.json { scale, data: base64 Int16 }(每变量一文件,前端按图层懒加载)
  *
- * 前端:先取 index.json → meta → global(必载)→ 视口覆盖的 tiles(增强精度)。
- * 所有 JSON 均与 /api/grid 的变量布局一致(base64 Float32),前端渲染代码零改动。
+ * 兼容:旧格式(单 global-2.5.json,变量全量打包)仍可被前端读取——meta 无 vars 清单时走旧路径。
+ *
+ * 前端:先取 index.json → meta(含网格与变量清单)→ 按需取 v_{var}.json。
+ * 所有变量布局与 /api/grid 一致(base64 Float32),前端渲染代码零改动。
  */
 'use strict';
 
@@ -34,6 +36,19 @@ const WANT_TILES = flag('tiles');
 /* 2.5° 全球粗网格参数(wrap:144 列覆盖 360°,无重复列) */
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
+/* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
+function varScale(model, vk) {
+  if (model === 'gfs_raw') {
+    const cfg = gfs.surfaceEngine.varCfg[vk];
+    if (cfg) return cfg.scale;
+  } else {
+    const eng = require('../server/nwp').ENGINES[model];
+    const cfg = eng && eng.def.varCfg[vk];
+    if (cfg && cfg.scale) return cfg.scale;
+  }
+  return 1;
+}
+
 async function main() {
   /* --index-only:扫描输出目录,重建 index.json(publish 阶段使用) */
   if (flag('index-only')) {
@@ -46,11 +61,18 @@ async function main() {
         /* runKey 目录名含时间戳,字典序即时序;取最新且产物齐全的一轮 */
         for (const r of runs.reverse()) {
           const metaPath = path.join(modelDir, r, 'meta.json');
+          if (!fs.existsSync(metaPath)) continue;
+          let meta = null;
+          try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { continue; }
+          if (meta.format === 'per-var') {
+            models[d] = { runKey: meta.runKey || r, meta: 'meta.json', format: 'per-var' };
+            break;
+          }
           const globalFile = path.join(modelDir, r, `global-${COARSE_DEG}.json`);
-          if (!fs.existsSync(metaPath) || !fs.existsSync(globalFile)) continue;
-          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-          models[d] = { runKey: meta.runKey || r, meta: 'meta.json', global: `global-${COARSE_DEG}.json` };
-          break;
+          if (fs.existsSync(globalFile)) {
+            models[d] = { runKey: meta.runKey || r, meta: 'meta.json', global: `global-${COARSE_DEG}.json` };
+            break;
+          }
         }
       }
     } catch { /* 目录不存在 */ }
@@ -60,19 +82,13 @@ async function main() {
   }
 
   const index = {};
-  const SCALES = {
-    gfs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100, vis: 10, snowd: 100, cape: 1, pwat: 10, cwat: 100 },
-    gefs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100 },
-    ecmwf_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100 },
-    aifs_raw: { u: 100, v: 100, temp: 100, rh: 100, msl: 10, precip: 100, cloud: 100, gust: 100 },
-  };
   for (const model of MODELS) {
     let engine;
-    if (model === 'gfs_raw') engine = require('../server/gfs').surfaceEngine;
+    if (model === 'gfs_raw') engine = gfs.surfaceEngine;
     else engine = require('../server/nwp').ENGINES[model];
     if (!engine) { console.error(`未知模型 ${model}`); process.exit(1); }
     const rawGridOf = (w, s, e, n, step) =>
-      model === 'gfs_raw' ? require('../server/gfs').rawGrid(w, s, e, n, step, 0) : engine.rawGrid(w, s, e, n, step);
+      model === 'gfs_raw' ? gfs.rawGrid(w, s, e, n, step, 0) : engine.rawGrid(w, s, e, n, step);
 
     const run = await engine.ensureLoaded();
     const runKey = run.key.replace('/', '-');
@@ -80,33 +96,42 @@ async function main() {
     fs.mkdirSync(outDir, { recursive: true });
     console.log(`\n[${model}] run ${runKey}: 生成静态数据 → ${outDir}`);
 
-    // meta
-    const meta = { model, runKey, times: run.times.map((t) => iso(t.ms)), generated: Math.floor(Date.now() / 1000) };
-    fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta));
-
     // 全球粗网格(2.5°):Int16 + 每变量 scale(体积较 Float32 减半,浏览器解码快)
     const coarse = await rawGridOf(-180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
-    const varsOut = {};
+
+    // meta:网格形状 + 变量清单(前端据此懒加载)
+    const varsManifest = {};
+    for (const [vk, b64] of Object.entries(coarse.vars)) {
+      const scale = varScale(model, vk);
+      varsManifest[vk] = { scale, file: `v_${vk}.json` };
+    }
+    const meta = {
+      model, runKey,
+      times: coarse.times,
+      generated: Math.floor(Date.now() / 1000),
+      format: 'per-var',
+      grid: { ni: coarse.lons.length, nj: coarse.lats.length, lon0: coarse.lons[0], dlon: COARSE_DEG, lat0: coarse.lats[0], dlat: COARSE_DEG },
+      vars: varsManifest,
+    };
+    fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta));
+
+    // 每变量一个文件:Int16 base64(按需加载,首屏只拉 u/v)
+    let total = 0;
     for (const [vk, b64] of Object.entries(coarse.vars)) {
       const f32 = Buffer.from(b64, 'base64');
       const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
-      const scale = SCALES[model][vk] || 1;
+      const scale = varScale(model, vk);
       const q = new Int16Array(vals.length);
       for (let i = 0; i < vals.length; i++) {
         const v = vals[i];
         q[i] = Number.isNaN(v) ? -32768 : Math.max(-32767, Math.min(32767, Math.round(v * scale)));
       }
-      varsOut[vk] = { scale, data: Buffer.from(q.buffer).toString('base64') };
+      const file = path.join(outDir, `v_${vk}.json`);
+      fs.writeFileSync(file, JSON.stringify({ scale, data: Buffer.from(q.buffer).toString('base64') }));
+      total += fs.statSync(file).size;
+      console.log(`  v_${vk}.json ${(fs.statSync(file).size / 1e6).toFixed(2)} MB`);
     }
-    const coarseJson = {
-      grid: { ni: coarse.lons.length, nj: coarse.lats.length, lon0: coarse.lons[0], dlon: COARSE_DEG, lat0: coarse.lats[0], dlat: COARSE_DEG },
-      times: coarse.times,
-      int16: true,
-      vars: varsOut,
-    };
-    fs.writeFileSync(path.join(outDir, `global-${COARSE_DEG}.json`), JSON.stringify(coarseJson));
-    const mb = (fs.statSync(path.join(outDir, `global-${COARSE_DEG}.json`)).size / 1e6).toFixed(1);
-    console.log(`  global-${COARSE_DEG}.json 完成(${mb} MB,变量 ${Object.keys(coarse.vars).join(', ')})`);
+    console.log(`  ${Object.keys(coarse.vars).length} 个变量,共 ${(total / 1e6).toFixed(1)} MB`);
 
     // 0.5° 区域分块(实验性增强包)
     if (WANT_TILES) {
@@ -130,7 +155,7 @@ async function main() {
       console.log(`  tiles 完成(${nCol * nRow} 块)`);
     }
 
-    index[model] = { runKey, meta: 'meta.json', global: `global-${COARSE_DEG}.json` };
+    index[model] = { runKey, meta: 'meta.json', format: 'per-var' };
   }
 
   fs.mkdirSync(OUT, { recursive: true });
@@ -142,12 +167,6 @@ async function main() {
     '  Cache-Control: public, max-age=600',
   ].join('\n'));
   console.log(`\n全部完成 → ${OUT}/index.json(含 _headers)`);
-}
-
-function iso(ms) {
-  const d = new Date(ms);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:00`;
 }
 
 main().catch((e) => { console.error('生成失败:', e); process.exit(1); });

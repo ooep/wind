@@ -1,0 +1,46 @@
+name: data · 站点实况与热带气旋
+
+# 观测类数据管道:全球 METAR 站点实况(aviationweather.gov)+ NHC 活动飓风。
+# 每小时烘焙为小体积 JSON 提交到仓库,随 Cloudflare Pages 自动部署。
+
+on:
+  schedule:
+    - cron: '40 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-obs
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 抓取并烘焙观测数据
+        run: |
+          node tools/bake-obs.js dist/data
+          node tools/bake-taf.js dist/data
+          node tools/bake-tropical.js dist/data
+
+      - name: 发布数据到仓库(触发 Cloudflare Pages 自动部署)
+        run: |
+          git config user.name  "fy-data-bot"
+          git config user.email "fy-data-bot@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add -A -f dist/data/obs dist/data/tropical
+          git commit -m "obs update $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
+          for i in 1 2 3 4 5; do
+            if git push origin main; then exit 0; fi
+            sleep 20
+            git pull --rebase origin main || true
+          done

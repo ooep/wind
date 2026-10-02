@@ -1,13 +1,22 @@
 /*
  * GRIB2 解码器(纯 JS,零依赖)
  * 支持:GDT 3.0(规则经纬度网格)、PDT 4.0/4.8、DRT 5.0(简单打包)/
- * 5.2(复杂打包)/ 5.3(复杂打包+空间差分)、位图段。
+ * 5.2(复杂打包)/ 5.3(复杂打包+空间差分)/ 5.40(JPEG2000,NCEP 海浪)、位图段。
+ *
+ * 5.40 借助 python3 + Pillow(轮子内置 OpenJPEG)解码内嵌 J2K 码流:
+ * NCEP 海浪把位图内有效点编成单行图像,样本 16bit 容器左对齐输出,
+ * 由本模块右移到有效位宽后按 (R + X×2^E)×10^-D 换算。
  *
  * 兼容 NCEP(GFS)的两个实现偏差(经真实数据校准):
  *  1. 组长度参考为 4 字节(规范为 6 字节)→ 解析时两种布局自动探测(判据:组长度总和 == 数据点数)
  *  2. 数值公式为 (R + X×2^E)×10^-D(规范为 R + X×2^E×10^-D)
  */
 'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 
 const EARTH_R = 6371.229; // GFS 使用的地球半径(km),仅元数据用
 
@@ -183,6 +192,8 @@ function unpackValues(drt, data, bitmap, nPoints) {
   }
   if (template === 2 || template === 3) {
     raw = unpackComplex(drt, data);
+  } else if (template === 40) {
+    raw = unpackJ2K(drt, data);
   } else {
     throw new Error(`不支持的数据表示模板 5.${template}`);
   }
@@ -307,6 +318,38 @@ function unpackComplex(drt, data) {
     if (out) return out;
   }
   return null;
+}
+
+/* JPEG2000 打包(5.40):J2K 码流交给 python3 + Pillow(内置 OpenJPEG)解码。
+ * 返回整型域样本(未应用 R/E/D 与位图)。 */
+function unpackJ2K(drt, data) {
+  const NV = drt.nValues;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fy-j2k-'));
+  try {
+    const file = path.join(dir, 'c.j2k');
+    fs.writeFileSync(file, data);
+    const py = process.env.J2K_PYTHON || 'python3';
+    const r = spawnSync(py, [path.join(__dirname, 'j2k.py'), file], { maxBuffer: 512 * 1024 * 1024 });
+    if (r.error) throw new Error(`J2K 解码器调用失败(${r.error.code === 'ENOENT' ? '未找到 python3' : r.error.message})`);
+    if (r.status !== 0) {
+      const hint = /ModuleNotFoundError|No module named/.test(String(r.stderr)) ? '(需要 Pillow:pip3 install pillow)' : '';
+      throw new Error(`J2K 解码失败${hint}:${String(r.stderr).slice(0, 200)}`);
+    }
+    const bytes = r.stdout;
+    if (bytes.length < NV * 2) throw new Error(`J2K 样本数不足 ${bytes.length / 2}/${NV}`);
+    const u16 = new Uint16Array(bytes.buffer, bytes.byteOffset, NV);
+    /* openjpeg 输出左对齐到 16bit 容器:右移到声明位宽;自适应兜底防个别场位宽异常 */
+    const bits = drt.bitsPerValue > 0 ? drt.bitsPerValue : 16;
+    let shift = Math.max(0, 16 - bits);
+    let maxV = 0;
+    for (let i = 0; i < NV; i++) if (u16[i] > maxV) maxV = u16[i];
+    while (shift < 15 && (maxV >> shift) >= (1 << bits)) shift++;
+    const out = new Float64Array(NV);
+    for (let i = 0; i < NV; i++) out[i] = u16[i] >> shift;
+    return out;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 module.exports = { findMessages, decodeMessage };

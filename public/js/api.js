@@ -1,7 +1,7 @@
 /* API 客户端:双模式
  *  - 服务端模式(默认):/api/grid /api/point /api/geocode 由 Node 服务提供
- *  - 静态模式:数据来自静态数据仓库(GitHub Actions 定时生成并提交到本仓库
- *    dist/data/,Cloudflare Pages 绑定仓库后随站点同域提供,零服务器、抗攻击)。
+ *  - 静态模式:数据来自静态数据仓库(GitHub Actions 定时生成,Cloudflare Pages 同域提供,
+ *    零服务器、抗攻击)。per-var 格式:meta.json 带变量清单,变量文件按图层懒加载。
  *
  * 模式探测顺序:
  *  1. window.FY_CONFIG.staticData 或 URL ?data=<路径>(显式指定)
@@ -35,7 +35,7 @@ export async function resolveMode() {
 }
 
 const gridCache = new Map(); // key -> Grid
-const GRID_CACHE_MAX = 4;
+const GRID_CACHE_MAX = 6;
 let GridCtor = null;
 export function initApi(GridClass) { GridCtor = GridClass; }
 
@@ -47,7 +47,8 @@ function cacheKey(p) {
 /* ---------------- 静态模式 ---------------- */
 
 const staticIndex = { data: null, fetchedAt: 0, promise: null };
-const staticGrids = new Map(); // model -> Grid(已解码)
+const staticGrids = new Map(); // model -> Grid(已解码;变量按需补齐)
+const staticMetas = new Map(); // model -> meta
 
 async function staticIndexGet() {
   if (staticIndex.data && Date.now() - staticIndex.fetchedAt < 10 * 60e3) return staticIndex.data;
@@ -71,56 +72,87 @@ function lonsOf(grid) {
   for (let i = 0; i < grid.ni; i++) a.push(+(grid.lon0 + i * grid.dlon).toFixed(4));
   return a;
 }
-function b64FromF32(f32) {
-  const u8 = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength);
-  let s = '';
-  const CH = 32768;
-  for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
-  return btoa(s);
+function f32FromI16B64(b64, scale) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const i16 = new Int16Array(bytes.buffer);
+  const f32 = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] === -32768 ? NaN : i16[i] / scale;
+  return f32;
 }
 
-/* 拉取并解码某模式的静态全球包 → /api/grid 同构 Grid */
-async function staticModelGrid(model) {
-  if (staticGrids.has(model)) return staticGrids.get(model);
+async function staticMetaGet(model) {
+  if (staticMetas.has(model)) return staticMetas.get(model);
   const index = await staticIndexGet();
   const entry = index.models && index.models[model];
   if (!entry) throw new Error(`静态数据未包含模式 ${model}`);
-  const runKey = entry.runKey;
-  const [meta, pack] = await Promise.all([
-    fetch(`${STATIC_BASE}/${model}/${runKey}/meta.json`).then((r) => { if (!r.ok) throw new Error(`meta ${r.status}`); return r.json(); }),
-    fetch(`${STATIC_BASE}/${model}/${runKey}/${entry.global}`).then((r) => { if (!r.ok) throw new Error(`global ${r.status}`); return r.json(); }),
-  ]);
-  const grid = pack.grid;
-  const vars = {};
-  for (const [vk, item] of Object.entries(pack.vars)) {
-    const bin = atob(item.data);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const i16 = new Int16Array(bytes.buffer);
-    const f32 = new Float32Array(i16.length);
-    for (let i = 0; i < i16.length; i++) {
-      f32[i] = i16[i] === -32768 ? NaN : i16[i] / item.scale;
-    }
-    vars[vk] = b64FromF32(f32);
+  const meta = await fetch(`${STATIC_BASE}/${model}/${entry.runKey}/meta.json`)
+    .then((r) => { if (!r.ok) throw new Error(`meta ${r.status}`); return r.json(); });
+  staticMetas.set(model, meta);
+  return meta;
+}
+
+/* 拉取一个变量文件 → Float32Array(per-var 格式) */
+async function fetchVarF32(model, runKey, vk, cfg) {
+  const r = await fetch(`${STATIC_BASE}/${model}/${runKey}/${cfg.file}`);
+  if (!r.ok) throw new Error(`变量 ${vk} 数据尚未生成(${r.status}),等待下一轮数据管道`);
+  const pack = await r.json();
+  return f32FromI16B64(pack.data, pack.scale);
+}
+
+/* 确保静态 Grid 上已加载给定变量(缺失则拉取并注入;并发去重) */
+export async function ensureGridVars(grid, vks) {
+  if (!staticMode || !grid) return grid;
+  const meta = grid.__staticMeta;
+  if (!meta || meta.format !== 'per-var') return grid; // 旧格式已全量加载
+  const jobs = [];
+  for (const vk of vks || []) {
+    if (grid.vars[vk] || (grid.__loading && grid.__loading[vk])) continue;
+    const cfg = meta.vars[vk];
+    if (!cfg) continue; // 该模式不提供此变量 → 保持 NaN,由图层门控兜底
+    grid.__loading = grid.__loading || {};
+    grid.__loading[vk] = fetchVarF32(grid.__model, grid.__runKey, vk, cfg)
+      .then((f32) => { grid.vars[vk] = f32; })
+      .finally(() => { delete grid.__loading[vk]; });
+    jobs.push(grid.__loading[vk]);
   }
+  if (jobs.length) await Promise.all(jobs);
+  return grid;
+}
+
+/* 静态模式数据包 → /api/grid 同构 Grid;needs 为初始急载变量(u/v 供粒子动画) */
+async function staticModelGrid(model, needs) {
+  if (staticGrids.has(model)) {
+    const g = staticGrids.get(model);
+    if (needs) await ensureGridVars(g, needs);
+    return g;
+  }
+  const index = await staticIndexGet();
+  const meta = await staticMetaGet(model);
+  const grid = meta.grid;
   const shape = {
     model, source: `静态数据包(${model})`,
     step: grid.dlon, wrapLon: true,
     cols: grid.ni, rows: grid.nj,
-    times: meta.times, generated: pack.generated || meta.generated,
+    times: meta.times, generated: meta.generated,
     lat0: grid.lat0, lon0: grid.lon0,
     lats: latsOf(grid), lons: lonsOf(grid),
-    vars,
+    vars: {},
   };
   const gridObj = new GridCtor(shape);
+  gridObj.__model = model;
+  gridObj.__runKey = index.models[model].runKey;
+  gridObj.__staticMeta = meta;
   staticGrids.set(model, gridObj);
+  if (needs) await ensureGridVars(gridObj, needs);
   return gridObj;
 }
 
-/* 静态模式:点预报由本地格点插值合成(与 /api/point 响应同构) */
-async function staticPoint(lat, lon, model) {
-  const grid = await staticModelGrid(model);
-  const times = grid.times.map((t) => Date.parse(t + ':00Z'));
+/* 静态模式:点预报由本地格点插值合成(与 /api/point 响应同构);needs 可精简(对比 tab 只需温/风) */
+async function staticPoint(lat, lon, model, needs) {
+  const grid = await staticModelGrid(model, needs || ['temp', 'rh', 'precip', 'cloud', 'msl', 'u', 'v', 'gust']);
+  const times = grid.times; // Grid 构造时已解析为毫秒
   const fr = { i0: 0, i1: 0, f: 0 };
   const series = times.map((ms, ti) => {
     fr.i0 = ti; fr.i1 = ti; fr.f = 0;
@@ -205,11 +237,20 @@ async function staticPoint(lat, lon, model) {
       cloud_cover: Math.round(cur.cloud),
       pressure_msl: Math.round(cur.msl),
       wind_speed_10m: +curSpd.toFixed(1),
-      wind_direction_10m: dirOf(cur),
+      wind_direction_10m: curDir,
       wind_gusts_10m: Number.isNaN(cur.gust) ? null : +cur.gust.toFixed(1),
     },
     hourly, daily,
   };
+}
+
+/* 静态模式可用模式列表(供模型选择器过滤) */
+export async function staticAvailableModels() {
+  if (!staticMode) return null;
+  try {
+    const index = await staticIndexGet();
+    return Object.keys(index.models || {});
+  } catch { return null; }
 }
 
 function naiveLocal(ms) {
@@ -224,7 +265,7 @@ function sunTimesLocal(dayStartUtcMs, lat, lon) {
   const doy = Math.floor((d - new Date(Date.UTC(d.getUTCFullYear(), 0, 1))) / 86400e3) + 1;
   const g = (2 * Math.PI / 365) * (doy - 1);
   const eq = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
-  const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+  const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g);
   const start = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   const cosH = Math.cos(90.833 * rad) / (Math.cos(lat * rad) * Math.cos(decl)) - Math.tan(lat * rad) * Math.tan(decl);
   const noon = start + (720 - 4 * lon - eq) * 60000;
@@ -238,7 +279,7 @@ function sunTimesLocal(dayStartUtcMs, lat, lon) {
 export async function fetchGrid(params) {
   await resolveMode();
   if (staticMode) {
-    const grid = await staticModelGrid(params.model);
+    const grid = await staticModelGrid(params.model, params.needs || ['u', 'v']);
     return { grid, cached: true };
   }
   const key = cacheKey(params);
@@ -261,7 +302,7 @@ export async function fetchGrid(params) {
   }
   return { grid, cached: false };
 }
-export function clearGridCache() { gridCache.clear(); staticGrids.clear(); }
+export function clearGridCache() { gridCache.clear(); staticGrids.clear(); staticMetas.clear(); }
 
 export async function fetchPoint(lat, lon, model) {
   await resolveMode();
@@ -271,6 +312,36 @@ export async function fetchPoint(lat, lon, model) {
   const data = await res.json();
   if (!res.ok || data.error) throw new Error(data.message || `预报加载失败 (${res.status})`);
   return data;
+}
+
+/* 指定模式的点预报(模式对比 tab 用);light=true 只拉温度/风,静态模式下省流量。
+ * 单模式失败返回空对象,由调用方按 current 字段判空跳过。 */
+export async function fetchPointModel(lat, lon, model, light = false) {
+  await resolveMode();
+  try {
+    if (staticMode) return await staticPoint(lat, lon, model, light ? ['temp', 'u', 'v'] : undefined);
+    const res = await fetch(`/api/point?lat=${lat}&lon=${lon}&model=${model}`);
+    return await res.json();
+  } catch { return {}; }
+}
+
+/* 海浪预报(静态部署无服务端代理,直连 Open-Meteo Marine,其 API 允许跨域) */
+export async function fetchMarine(lat, lon) {
+  await resolveMode();
+  if (staticMode) {
+    const params = new URLSearchParams({
+      latitude: String(lat), longitude: String(lon),
+      hourly: 'wave_height,wave_direction,wave_period',
+      daily: 'wave_height_max,wave_direction_dominant,wave_period_max',
+      timezone: 'auto', forecast_days: '7',
+    });
+    const res = await fetch(`https://marine-api.open-meteo.com/v1/marine?${params}`);
+    if (!res.ok) throw new Error('海浪数据加载失败');
+    return res.json();
+  }
+  const res = await fetch(`/api/marine?lat=${lat}&lon=${lon}`);
+  if (!res.ok) throw new Error('海浪数据加载失败');
+  return res.json();
 }
 
 export async function fetchGeocode(name) {

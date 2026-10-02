@@ -1,14 +1,20 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS } from './colormaps.js';
-import { initApi, fetchGrid, clearGridCache } from './api.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN } from './colormaps.js';
+import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
 import { IsobarLayer } from './layers/isobars.js';
 import { RadarLayer } from './layers/radar.js';
+import { SatelliteLayer } from './layers/satellite.js';
+import { LightningLayer } from './layers/lightning.js';
+import { TropicalLayer } from './layers/tropical.js';
+import { StationLayer } from './layers/stations.js';
 import { Timeline } from './timeline.js';
 import { ForecastPanel, setDegUnit, toDeg } from './panel.js';
 import { Search } from './search.js';
+import { MeasureTool } from './measure.js';
+import { FavoritesUI } from './favs.js';
 
 initApi(Grid);
 
@@ -27,23 +33,68 @@ const ICONS = {
   cape: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M13 2 5 13h5l-1.5 9L19 10h-5l1-8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
   snow: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M12 3l-2 2.4M12 3l2 2.4M12 21l-2-2.4M12 21l2-2.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   vis: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
+  gust: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 7c4-2.5 7 2.5 11 0M2 12c4-2.5 7 2.5 11 0M4 17c3-2 5 2 9 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 10.5l3 1.5-3 1.5" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  pwat: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.2s5 5.7 5 9.2a5 5 0 0 1-10 0c0-3.5 5-9.2 5-9.2z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 15.5v-4M9.8 13.8h4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  cwat: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 13a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2A4 4 0 0 1 17 13z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 16.5c1 1.2 2 1.2 3 0s2-1.2 3 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  lcdc: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6.5 9a3.8 3.8 0 0 1-.4-7.6A4.6 4.6 0 0 1 15 2.9 3.4 3.4 0 0 1 14.5 9z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 20h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.55"/></svg>',
+  mcdc: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6.5 11a3.8 3.8 0 0 1-.4-7.6A4.6 4.6 0 0 1 15 4.9 3.4 3.4 0 0 1 14.5 11z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 20h16M6 16.5h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.55"/></svg>',
+  hcdc: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6.5 8a3.8 3.8 0 0 1-.4-7.6A4.6 4.6 0 0 1 15 1.9 3.4 3.4 0 0 1 14.5 8z" fill="none" stroke="currentColor" stroke-width="1.7" transform="translate(0 4)"/><path d="M4 20h16M6 16.5h12M8 13h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.55"/></svg>',
+  newsnow: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2v14M5.5 5.8l13 6.4M5.5 12.2l13-6.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6 20.5h12M8 17.5c1.3 1 2.7 1 4 0s2.7-1 4 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/></svg>',
+  soilw: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 7.5s3.5 4 3.5 6.4a3.5 3.5 0 0 1-7 0C8.5 11.5 12 7.5 12 7.5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 18.5h16M6 21h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.6"/></svg>',
+  soilt: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 4a2 2 0 1 1 4 0v9.3a4.5 4.5 0 1 1-4 0z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="17.5" r="2" fill="currentColor"/><path d="M3.5 21h17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.6"/></svg>',
+  frzlvl: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 20l5.5-9 3.5 5.5L15 12l6 8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 11V4.5M6.8 6.2L8.5 4.5l1.7 1.7M14.5 6.5L17 4m0 0l-2.2-.4M17 4l-.4 2.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.8"/></svg>',
+  cin: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M13 2 5 13h5l-1.5 9L19 10h-5l1-8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" opacity="0.45"/><path d="M4 21.5h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
 };
 
 const LAYERS = [
   { id: 'wind', label: '风场', unit: 'm/s', cmap: WIND, variable: 'wind', fmt: (v) => Math.round(v) },
+  { id: 'gust', label: '阵风', unit: 'm/s', cmap: WIND, variable: 'gust', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'temp', label: '温度', unit: '°C', cmap: TEMP, variable: 'temp', fmt: (v) => Math.round(toDeg(v)) },
-  { id: 'pressure', label: '气压', unit: 'hPa', cmap: MSL, variable: 'msl', fmt: (v) => Math.round(v), isobars: true },
-  { id: 'precip', label: '降水', unit: 'mm/h', cmap: PRECIP, variable: 'precip', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)) },
-  { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
-  { id: 'cloud', label: '云量', unit: '%', cmap: CLOUD, variable: 'cloud', fmt: (v) => Math.round(v) },
-  { id: 'humidity', label: '湿度', unit: '%', cmap: RH, variable: 'rh', fmt: (v) => Math.round(v), levels: true },
   { id: 'feels', label: '体感', unit: '°C', cmap: TEMP, variable: 'feels', fmt: (v) => Math.round(toDeg(v)) },
   { id: 'dew', label: '露点', unit: '°C', cmap: DEW, variable: 'dew', fmt: (v) => Math.round(toDeg(v)) },
+  { id: 'humidity', label: '湿度', unit: '%', cmap: RH, variable: 'rh', fmt: (v) => Math.round(v), levels: true },
+  { id: 'frzlvl', label: '0°C层高度', unit: 'm', cmap: FRZLVL, variable: 'frzlvl', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
+  { id: 'cloud', label: '总云量', unit: '%', cmap: CLOUD, variable: 'cloud', fmt: (v) => Math.round(v) },
+  { id: 'lcdc', label: '低云', unit: '%', cmap: CLOUD, variable: 'lcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'mcdc', label: '中云', unit: '%', cmap: CLOUD, variable: 'mcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'hcdc', label: '高云', unit: '%', cmap: CLOUD, variable: 'hcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'cwat', label: '云水', unit: 'mm', cmap: CWAT, variable: 'cwat', fmt: (v) => v.toFixed(2), models: ['gfs_raw'] },
+  { id: 'precip', label: '降水', unit: 'mm/h', cmap: PRECIP, variable: 'precip', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)) },
   { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ['—', '雨', '冻雨', '雪'][Math.round(v)] || '' },
-  { id: 'cape', label: '雷暴', unit: 'J/kg', cmap: CAPE, variable: 'cape', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
-  { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'vis', label: '能见度', unit: 'km', cmap: VIS, variable: 'vis', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'newsnow', label: '新雪 3h', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
+  { id: 'cape', label: '雷暴 CAPE', unit: 'J/kg', cmap: CAPE, variable: 'cape', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
+  { id: 'pressure', label: '气压', unit: 'hPa', cmap: MSL, variable: 'msl', fmt: (v) => Math.round(v), isobars: true },
+  { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
+  { id: 'soilt', label: '土壤温度', unit: '°C', cmap: TEMP, variable: 'soilt', fmt: (v) => Math.round(toDeg(v)), models: ['gfs_raw'] },
+  { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
 ];
+
+/* 分组(手风琴):图层按钮按组分节收纳,对齐 Windy 的导航结构 */
+const GROUPS = [
+  { id: 'obs', label: '观测', layers: ['radar'] },
+  { id: 'wind', label: '风', layers: ['wind', 'gust'] },
+  { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'dew', 'humidity', 'frzlvl'] },
+  { id: 'cloud', label: '云雨', layers: ['cloud', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'precip', 'ptype', 'vis'] },
+  { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
+  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'pressure'] },
+  { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
+];
+
+/* 当前图层渲染所需的原始变量(派生图层映射到其数据来源) */
+function varNeeds(def) {
+  if (!def || def.special) return [];
+  const M = {
+    wind: ['u', 'v'], gust: ['gust'],
+    feels: ['temp', 'rh', 'u', 'v'], dew: ['temp', 'rh'], ptype: ['temp', 'precip'],
+  };
+  return M[def.variable] || [def.variable];
+}
+const layerById = (id) => LAYERS.find((l) => l.id === id);
+
 // 支持气压层切换的图层(风/温/湿)
 const LEVEL_LAYERS = new Set(['wind', 'temp', 'humidity']);
 
@@ -71,6 +122,7 @@ const state = {
   unit: 'c',
   level: num(urlState.lv, 0),
   opacity: Math.min(1, Math.max(0.35, num(urlState.op, 100) / 100)),
+  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations'].includes(x))),
   grid: null,
   gridKey: '',
   fetchingKey: '',
@@ -91,20 +143,28 @@ const map = L.map('map', {
 
 /* 底图:矢量线划(Natural Earth 本地化,渲染于气象层之上,不被填色遮挡);
  * 卫星 = NASA GIBS 影像在气象层之下 + 矢量线划叠加(hybrid)。 */
-import { VectorBasemap } from './basemap.js?v=2';
+import { VectorBasemap, LandFill } from './basemap.js?v=2';
 let satLayer = null;
 const GIBS_URL = (date) => `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
 const vectorBasemap = new VectorBasemap(map);
+const landfill = new LandFill(map);
+const OPENTOPO_URL = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
 
 function setBasemap(kind) {
   state.basemap = kind;
   syncUrl();
   if (satLayer) { map.removeLayer(satLayer); satLayer = null; }
+  /* 深色 = 本地陆地填充(零外部依赖);卫星/地形 = 外部影像瓦片;线划均叠加其上 */
+  landfill.show(kind === 'dark');
   if (kind === 'satellite') {
     const d = new Date(Date.now() - 86400e3); // 取完整的一日合成影像
     const date = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     satLayer = L.tileLayer(GIBS_URL(date), {
       maxNativeZoom: 9, maxZoom: 10, attribution: 'NASA GIBS',
+    }).addTo(map);
+  } else if (kind === 'terrain') {
+    satLayer = L.tileLayer(OPENTOPO_URL, {
+      maxNativeZoom: 10, maxZoom: 10, attribution: 'OpenTopoMap',
     }).addTo(map);
   }
 }
@@ -115,6 +175,10 @@ const particles = new ParticleLayer(map);
 const scalar = new ScalarLayer(map);
 const isobars = new IsobarLayer(map);
 const radar = new RadarLayer(map);
+const satellite = new SatelliteLayer(map);
+const lightning = new LightningLayer(map);
+const tropical = new TropicalLayer(map);
+const stations = new StationLayer(map);
 const timeline = new Timeline({ onChange: onTimeChange });
 const panel = new ForecastPanel(() => state.model);
 
@@ -132,25 +196,61 @@ function updateLegend() {
     idxs.map((i) => `<span>${def.fmt(stops[i][0])}</span>`).join('');
 }
 
-/* ---------- 图层切换 ---------- */
+/* ---------- 图层切换(分组手风琴) ---------- */
 const layerBtnBox = document.getElementById('layer-buttons');
 function refreshLayerButtons() {
   for (const btn of layerBtnBox.querySelectorAll('.layer-btn')) {
-    const def = LAYERS.find((l) => l.id === btn.dataset.layer);
+    const def = layerById(btn.dataset.layer);
     btn.classList.toggle('dim', !!(def.models && !def.models.includes(state.model)));
   }
 }
-for (const def of LAYERS) {
-  const btn = document.createElement('button');
-  btn.className = 'layer-btn';
-  btn.dataset.layer = def.id;
-  btn.innerHTML = `${ICONS[def.id]}<span>${def.label}</span><small>${def.unit}</small>`;
-  btn.addEventListener('click', () => setLayer(def.id));
-  layerBtnBox.appendChild(btn);
+let openGroups = new Set();
+function renderLayerGroups() {
+  layerBtnBox.innerHTML = '';
+  for (const g of GROUPS) {
+    const sec = document.createElement('div');
+    sec.className = 'lgroup' + (openGroups.has(g.id) ? ' open' : '');
+    sec.dataset.group = g.id;
+    const head = document.createElement('button');
+    head.className = 'lgroup-head';
+    head.innerHTML = `<span>${g.label}</span><i>${g.layers.length}</i><b class="chev">›</b>`;
+    head.addEventListener('click', () => {
+      if (openGroups.has(g.id)) openGroups.delete(g.id);
+      else openGroups.add(g.id);
+      sec.classList.toggle('open', openGroups.has(g.id));
+    });
+    const body = document.createElement('div');
+    body.className = 'lgroup-body';
+    for (const id of g.layers) {
+      const def = layerById(id);
+      const btn = document.createElement('button');
+      btn.className = 'layer-btn';
+      btn.dataset.layer = def.id;
+      btn.innerHTML = `${ICONS[def.id]}<span>${def.label}</span><small>${def.unit}</small>`;
+      btn.addEventListener('click', () => setLayer(def.id));
+      body.appendChild(btn);
+    }
+    sec.appendChild(head);
+    sec.appendChild(body);
+    layerBtnBox.appendChild(sec);
+  }
+  refreshLayerButtons();
+  syncActiveLayerBtn();
+}
+function syncActiveLayerBtn() {
+  document.querySelectorAll('.layer-btn').forEach((b) => b.classList.toggle('active', b.dataset.layer === state.layer));
+  document.querySelectorAll('.lgroup').forEach((sec) => {
+    const g = GROUPS.find((g) => g.id === sec.dataset.group);
+    sec.classList.toggle('has-active', !!g && g.layers.includes(state.layer));
+  });
+}
+function openGroupOf(layerId) {
+  const g = GROUPS.find((g) => g.layers.includes(layerId));
+  if (g) { openGroups.add(g.id); renderLayerGroups(); }
 }
 
-function setLayer(id) {
-  const def0 = LAYERS.find((l) => l.id === id);
+async function setLayer(id) {
+  const def0 = layerById(id);
   if (def0.models && !def0.models.includes(state.model)) {
     toast(`「${def0.label}」图层暂不支持当前模式,请切换到 NOAA GFS`);
     return;
@@ -158,8 +258,9 @@ function setLayer(id) {
   state.layer = id;
   syncUrl();
   document.getElementById('cursor-tip').hidden = true; // 旧图层读数立即失效
-  document.querySelectorAll('.layer-btn').forEach((b) => b.classList.toggle('active', b.dataset.layer === id));
-  const def = LAYERS.find((l) => l.id === id);
+  openGroupOf(id);
+  syncActiveLayerBtn();
+  const def = layerById(id);
   updateLevelBar();
 
   const isRadar = !!def.special;
@@ -174,6 +275,19 @@ function setLayer(id) {
   }
   isobars.show(!!def.isobars);
   updateLegend();
+
+  /* 静态模式:按需补拉当前图层变量 */
+  const needs = varNeeds(def);
+  if (state.grid && needs.length && needs.some((vk) => !state.grid.vars[vk])) {
+    loadingEl.hidden = false;
+    try {
+      await ensureGridVars(state.grid, needs);
+    } catch (e) {
+      toast(`图层数据加载失败:${e.message}`);
+    } finally {
+      loadingEl.hidden = true;
+    }
+  }
   onTimeChange(state.timePos);
 }
 
@@ -184,6 +298,46 @@ particleBtn.addEventListener('click', () => {
   particleBtn.classList.toggle('active', state.particles);
   particles.setEnabled(state.particles);
 });
+
+/* ---------- 实时叠加层(观测类,可与任意主图层共存) ---------- */
+const OVERLAYS = [
+  { id: 'lightning', label: '闪电', title: 'Blitzortung 实时闪电 · 最近 90 分钟',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M13 2 5 13h5l-1.5 9L19 10h-5l1-8z" fill="currentColor"/></svg>' },
+  { id: 'satellite', label: '卫星', title: '卫星云图:全球真彩(VIIRS 每日)/ GOES 红外(10 分钟)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 4.5a3 3 0 1 1 0 6 3 3 0 0 1 0-6z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 7.5a6.5 6.5 0 0 1 2.6-5.2M18.5 7.5a6.5 6.5 0 0 0-2.6-5.2M8.1 2.3 7 3.4M16.9 2.3l1.1 1.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.5 13.5 4 18M15.5 13.5 20 18M9.5 20.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>' },
+  { id: 'tropical', label: '台风', title: '活动热带气旋路径:JMA(西太平洋)+ NOAA NHC(大西洋/东太平洋)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3.4" fill="currentColor"/><path d="M12 4a8 8 0 0 1 7 4.2M12 20a8 8 0 0 1-7-4.2M5.6 8.6A8 8 0 0 1 12 4M18.4 15.4A8 8 0 0 1 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
+  { id: 'stations', label: '站点', title: '全球机场/气象站 METAR 实测(NOAA,每小时更新)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M6 6a8.5 8.5 0 0 0 0 12M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>' },
+];
+const overlayBtnBox = document.getElementById('overlay-buttons');
+const satChannelWrap = document.getElementById('sat-channel-wrap');
+for (const ov of OVERLAYS) {
+  const btn = document.createElement('button');
+  btn.className = 'layer-btn overlay-btn';
+  btn.id = `ov-${ov.id}`;
+  btn.title = ov.title;
+  btn.innerHTML = `${ov.icon}<span>${ov.label}</span>`;
+  btn.addEventListener('click', () => toggleOverlay(ov.id, !state.overlays.has(ov.id)));
+  overlayBtnBox.appendChild(btn);
+}
+document.getElementById('sat-channel').value = satellite.channel;
+document.getElementById('sat-channel').addEventListener('change', (e) => {
+  satellite.setChannel(e.target.value);
+});
+
+function toggleOverlay(id, on, silent) {
+  if (on) state.overlays.add(id); else state.overlays.delete(id);
+  if (id === 'satellite') {
+    satellite.show(on);
+    satChannelWrap.hidden = !on;
+  } else if (id === 'lightning') lightning.show(on);
+  else if (id === 'tropical') tropical.show(on);
+  else if (id === 'stations') stations.show(on);
+  document.getElementById(`ov-${id}`)?.classList.toggle('active', on);
+  if (!silent) syncUrl();
+}
+for (const id of [...state.overlays]) toggleOverlay(id, true, true);
 
 /* ---------- 图层不透明度 ---------- */
 const opacitySlider = document.getElementById('opacity-slider');
@@ -240,7 +394,8 @@ async function fetchGridNow() {
   loadingEl.hidden = false;
   let rateLimited = false;
   try {
-    const { grid } = await fetchGrid({ ...spec, model: state.model, level: state.level });
+    const needs = [...new Set(['u', 'v', ...varNeeds(layerById(state.layer))])];
+    const { grid } = await fetchGrid({ ...spec, model: state.model, level: state.level, needs });
     // 请求期间视图又变了:丢弃(已缓存,稍后会重新取)
     const latest = gridSpec();
     if (specKey(latest) !== key) { return; }
@@ -286,11 +441,19 @@ function applyGrid(grid, key) {
   scalar.setGrid(grid);
   isobars.setGrid(grid);
   timeline.setTimes(grid.times);
-  if (state.pendingTime) {
-    const t = state.pendingTime;
-    state.pendingTime = null;
-    timeline.setPos(Math.min(Math.max(t, grid.times[0]), grid.times[grid.times.length - 1]));
-  } else onTimeChange(state.timePos);
+  /* 静态模式:确保当前图层 + 粒子所需变量已就绪再首帧渲染 */
+  const needs = [...new Set(['u', 'v', ...varNeeds(layerById(state.layer))])];
+  const pending = needs.some((vk) => !grid.vars[vk])
+    ? ensureGridVars(grid, needs).catch((e) => toast(`部分图层数据未就绪:${e.message}`))
+    : Promise.resolve();
+  pending.then(() => {
+    if (state.grid !== grid) return; // 期间已切换到更新的格点
+    if (state.pendingTime) {
+      const t = state.pendingTime;
+      state.pendingTime = null;
+      timeline.setPos(Math.min(Math.max(t, grid.times[0]), grid.times[grid.times.length - 1]));
+    } else onTimeChange(state.timePos);
+  });
 }
 
 map.on('moveend zoomend', () => { scheduleGridFetch(800); syncUrl(); });
@@ -306,6 +469,7 @@ function onTimeChange(ms) {
     particles.setFrame(fr);
   }
   radar.updateTime(ms);
+  satellite.updateTime(ms);
 }
 
 /* ---------- 光标取值器(悬停读数) ---------- */
@@ -415,6 +579,15 @@ const search = new Search({
   },
 });
 
+/* 收藏地点列表(与面板 ☆ 共享 localStorage) */
+new FavoritesUI({
+  go({ lat, lon, name }) {
+    map.flyTo([lat, lon], 9, { duration: 1.4 });
+    setPin(lat, lon);
+    panel.open(lat, lon, name);
+  },
+});
+
 let pin = null;
 function setPin(lat, lon) {
   const icon = L.divIcon({ className: '', html: '<div class="marker-pin"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
@@ -422,8 +595,14 @@ function setPin(lat, lon) {
   else pin = L.marker([lat, lon], { icon, keyboard: false }).addTo(map);
 }
 
-/* 点击地图查预报 */
+/* 测距/测面积工具:激活时点击只加点,不弹点位面板 */
+const measure = new MeasureTool(map, { toast });
+document.getElementById('measure-btn').addEventListener('click', () => measure.toggle());
+
+/* 点击地图查预报(观测层命中站点/台风时已认领,此处跳过) */
 map.on('click', (e) => {
+  if (measure.active) return;
+  if (window.__obsClickClaimed) { window.__obsClickClaimed = false; return; }
   setPin(e.latlng.lat, e.latlng.lng);
   panel.open(e.latlng.lat, e.latlng.lng);
 });
@@ -451,6 +630,7 @@ function syncUrl() {
     p.set('z', map.getZoom());
     if (state.timePos) p.set('t', state.timePos);
     if (state.opacity < 1) p.set('op', Math.round(state.opacity * 100));
+    if (state.overlays.size) p.set('o', [...state.overlays].join(','));
     history.replaceState(null, '', '#' + p.toString());
   }, 600);
 }
@@ -516,6 +696,16 @@ function updateLevelBar() {
 window.__currentModelLabel = MODEL_LABELS[state.model];
 window.__applyGrid = (data, key) => applyGrid(data instanceof Grid ? data : new Grid(data), key || 'debug'); // 调试钩子:可注入格点数据
 window.__app_map = map;
+window.__app_overlays = { lightning, satellite, tropical, stations }; // 调试钩子:叠加层状态
+/* 静态模式:模型选择器只保留静态包里实际存在的模式 */
+staticAvailableModels().then((avail) => {
+  if (!avail || avail.includes(state.model)) return;
+  const sel = document.getElementById('model-select');
+  [...sel.options].forEach((o) => { if (!avail.includes(o.value)) o.hidden = true; });
+  const fallback = avail.includes('gfs_raw') ? 'gfs_raw' : avail[0];
+  sel.value = fallback;
+  sel.dispatchEvent(new Event('change'));
+});
 if (urlState.m) document.getElementById('model-select').value = state.model;
 if (urlState.bm) document.getElementById('basemap-select').value = state.basemap;
 setBasemap(state.basemap);

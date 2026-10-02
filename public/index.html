@@ -29,6 +29,10 @@
   <button id="loc-btn" title="我的位置">
     <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 2.5a1.4 1.4 0 0 1 1.4 1.4v1.2a7 7 0 0 1 5.5 5.5h1.2a1.4 1.4 0 1 1 0 2.8h-1.2a7 7 0 0 1-5.5 5.5v1.2a1.4 1.4 0 1 1-2.8 0v-1.2a7 7 0 0 1-5.5-5.5H4.1a1.4 1.4 0 1 1 0-2.8h1.2a7 7 0 0 1 5.5-5.5V3.9A1.4 1.4 0 0 1 12 2.5z" fill="currentColor"/><circle cx="12" cy="12" r="3.2" fill="#0b1420"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
   </button>
+  <button id="fav-btn" title="收藏地点">
+    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.6l2.5 5.2 5.7.7-4.2 3.9 1.1 5.6-5.1-2.8-5.1 2.8 1.1-5.6L3.8 9.5l5.7-.7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+  </button>
+  <div id="fav-list" hidden></div>
 </header>
 
 <!-- 左侧图层栏 -->
@@ -40,11 +44,26 @@
   <div class="sep"></div>
   <div id="layer-buttons"></div>
   <div class="sep"></div>
+  <div id="overlay-label">实时叠加</div>
+  <div id="overlay-buttons"></div>
+  <div id="sat-channel-wrap" hidden>
+    <select id="sat-channel" title="卫星通道">
+      <option value="truecolor">真彩 · 全球(VIIRS 每日)</option>
+      <option value="irw">红外 · GOES-West(10分钟)</option>
+      <option value="ire">红外 · GOES-East(10分钟)</option>
+    </select>
+  </div>
+  <div class="sep"></div>
   <div id="levelbar" hidden></div>
   <div id="opacity-ctl" title="气象图层不透明度">
     <span>透明度</span>
     <input type="range" id="opacity-slider" min="35" max="100" step="5" value="100">
     <b id="opacity-val">100%</b>
+  </div>
+  <div id="legend" hidden>
+    <div id="legend-title"></div>
+    <div id="legend-bar"></div>
+    <div id="legend-labels"></div>
   </div>
 </nav>
 
@@ -67,16 +86,21 @@
       </optgroup>
     </select>
   </label>
-  <label class="ctl" title="底图:矢量线划不会被气象图层遮挡;卫星为影像+线划混合">
+  <label class="ctl" title="底图:矢量线划不会被气象图层遮挡;深色为本地陆地填充;卫星为影像+线划混合;地形为等高线图">
     <span>底图</span>
     <select id="basemap-select">
       <option value="vector">矢量线划</option>
+      <option value="dark">深色陆地</option>
       <option value="satellite">卫星 + 线划</option>
+      <option value="terrain">地形(实验)</option>
     </select>
   </label>
   <label class="ctl" title="温度单位"><span>单位</span>
     <select id="unit-select"><option value="c">°C</option><option value="f">°F</option></select>
   </label>
+  <button id="measure-btn" title="测距 / 测面积">
+    <svg viewBox="0 0 24 24" width="15" height="15"><path d="M3 17L17 3l4 4L7 21zM8 12l2 2M11 9l2 2M14 6l2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
   <button id="fs-btn" title="全屏切换">
     <svg viewBox="0 0 24 24" width="15" height="15"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>
@@ -106,19 +130,12 @@
   </div>
 </div>
 
-<!-- 图例 -->
-<div id="legend" hidden>
-  <div id="legend-title"></div>
-  <div id="legend-bar"></div>
-  <div id="legend-labels"></div>
-</div>
-
 <!-- 点位预报面板 -->
 <aside id="panel" hidden>
   <div id="panel-head">
     <div id="panel-loc"><b id="panel-title">位置</b><span id="panel-coords"></span></div>
     <div style="display:flex;gap:2px;align-items:center">
-      <button id="panel-fav" title="收藏此地点" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text-dim);padding:4px 6px;border-radius:7px">☆</button>
+      <button id="panel-fav" title="收藏此地点">☆</button>
       <button id="panel-close" title="关闭">✕</button>
     </div>
   </div>
@@ -137,10 +154,17 @@
         ① <b>NOAA GFS</b> 0.5°(主引擎)② <b>NOAA GEFS</b> 控制成员 0.5°(集合预报)③ <b>ECMWF IFS</b> 0.25°(欧洲中期天气预报中心,全球参考模式)。<br>
         全部直接获取官方原始 GRIB2(GFS/GEFS 来自 <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">AWS 开放数据</a>,ECMWF 来自 <a href="https://confluence.ecmwf.int/display/DAC/ECMWF+open+data" target="_blank" rel="noopener">ECMWF Open Data</a>,均无 key 无配额),自研解码器解析、单位换算、格点采样与点预报在本服务内完成。GFS/GEFS 时间窗为过去 24h ~ 未来 7 天;ECMWF 因发布延迟约 6~8 小时。预报存在模式误差,请以官方气象部门发布为准。</td></tr>
       <tr><th>降水雷达</th><td><a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> — 汇聚各国气象局雷达站观测,约 10 分钟更新;含未来 30 分钟外推。</td></tr>
+      <tr><th>实时闪电</th><td><a href="https://blitzortung.org/" target="_blank" rel="noopener">Blitzortung.org</a> — 社区雷电探测网络(全球数千 volunteer 探测站),WebSocket 实时推送,展示最近 90 分钟落雷,颜色越亮越新。</td></tr>
+      <tr><th>台风 / 飓风</th><td>西太平洋:日本气象厅 <a href="https://www.jma.go.jp/jma/indexe.html" target="_blank" rel="noopener">JMA</a> 官方路径与预报(过去轨迹 / 24-72h 预报 / 概率圆);大西洋与东中太平洋:NOAA <a href="https://www.nhc.noaa.gov/" target="_blank" rel="noopener">NHC</a> 预报轨迹 + 过去实况(ATCF),每小时刷新。</td></tr>
+      <tr><th>站点实况</th><td><a href="https://aviationweather.gov/" target="_blank" rel="noopener">aviationweather.gov</a>(NOAA,公有领域)— 全球约 900 个机场/气象站 METAR 实测(气温/露点/风/气压/天气现象),每小时更新,点击站点圆点查看详情。</td></tr>
+      <tr><th>卫星云图图层</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS</a> — 全球真彩(VIIRS,每日)与 GOES-East/West 红外(10.3µm 云顶温度,10 分钟刷新),可与任意主图层叠加并随时间轴回放。</td></tr>
+      <tr><th>机场 METAR/TAF</th><td><a href="https://aviationweather.gov/" target="_blank" rel="noopener">aviationweather.gov</a>(NOAA,公有领域)— 全球机场实况报文与航路预报,服务端每小时烘焙;机场库来自 <a href="https://davidmegginson.github.io/ourairports-data/" target="_blank" rel="noopener">OurAirports</a>(公有领域,约 5700 个)。</td></tr>
+      <tr><th>空气质量 / UV</th><td>Open-Meteo Air Quality(CAMS 全球)— PM2.5 / PM10 / O₃ / NO₂ / SO₂ / 沙尘 / US AQI / UV 指数,逐小时预报;欧洲另含花粉。</td></tr>
+      <tr><th>高空剖面</th><td>Open-Meteo 气压层数据(GFS)— 1000→150 hPa 共 11 层的温度/风/云,用于点位「剖面」视图。</td></tr>
       <tr><th>卫星影像</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — NASA 官方 VIIRS/MODIS 真彩影像,每日更新。</td></tr>
       <tr><th>地名检索</th><td>Open-Meteo Geocoding(GeoNames 数据)。</td></tr>
-      <tr><th>底图</th><td><a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> 矢量线划(海岸线/国界/湖泊/城市标注,已本地化,公有领域);「卫星 + 线划」模式的影像来自 NASA GIBS。矢量底图渲染在气象图层之上,不会被填色遮挡。</td></tr>
-      <tr><th>快捷键</th><td><b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>Esc</b> 关闭面板/弹窗 · 鼠标悬停地图任意位置可读取当前图层数值</td></tr>
+      <tr><th>底图</th><td><a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> 矢量线划(海岸线/国界/湖泊/城市标注,已本地化,公有领域);「深色陆地」为本地渲染的陆地填充;「卫星 + 线划」影像来自 NASA GIBS;「地形」来自 <a href="https://opentopomap.org/" target="_blank" rel="noopener">OpenTopoMap</a>(CC-BY-SA)。矢量底图渲染在气象图层之上,不会被填色遮挡。</td></tr>
+      <tr><th>快捷键</th><td><b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>Esc</b> 关闭面板/弹窗/测量 · 鼠标悬停地图任意位置可读取当前图层数值 · 设置内「测距」按钮可量算距离(km/nm)与面积</td></tr>
     </table>
     <p>开放数据许可:NOAA GFS 为美国官方产出(public domain);Open-Meteo 数据 CC BY 4.0(非商业免费,商业使用需授权)。本站为技术演示,不构成任何气象决策依据。</p>
   </div>
@@ -150,10 +174,21 @@
 <div id="grid-loading" hidden><div class="spinner"></div><span>正在加载气象场数据…</span></div>
 <div id="cursor-tip" hidden><b id="ct-val"></b><span id="ct-sub"></span></div>
 
+<!-- 测距量算条 -->
+<div id="measure-bar" hidden>
+  <span id="measure-info">点击地图加点</span>
+  <button id="measure-done">完成</button>
+  <button id="measure-clear">清除</button>
+  <button id="measure-exit">退出</button>
+</div>
+
 <footer id="attrib">
   数据 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>(GFS/ICON/ECMWF) ·
   <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> ·
-  <a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS</a>
+  <a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS</a> ·
+  <a href="https://aviationweather.gov/" target="_blank" rel="noopener">NOAA METAR/TAF</a> ·
+  <a href="https://blitzortung.org/" target="_blank" rel="noopener">Blitzortung</a>(闪电) ·
+  <a href="https://www.jma.go.jp/jma/indexe.html" target="_blank" rel="noopener">JMA</a>/<a href="https://www.nhc.noaa.gov/" target="_blank" rel="noopener">NHC</a>(台风)
   | 底图 <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a>(矢量线划)
 </footer>
 
@@ -171,6 +206,6 @@
   window.addEventListener('error', (e) => window.__capt.push('ERR ' + e.message + ':' + e.lineno));
 </script>
 <script src="vendor/leaflet/leaflet.js"></script>
-<script type="module" src="js/main.js?v=4"></script>
+<script type="module" src="js/main.js?v=6"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DIST_DATA_DIR = path.join(__dirname, 'dist', 'data'); // 静态数据目录(与 Pages 生产同构)
 const CACHE_DIR = path.join(__dirname, '.cache');
 
 const OPEN_METEO = 'https://api.open-meteo.com/v1/forecast';
@@ -29,6 +30,9 @@ const RADAR_API = 'https://api.rainviewer.com/public/weather-maps.json';
 const gfs = require('./server/gfs');
 /* nwp = 更多自建模式引擎:GEFS 控制成员、ECMWF IFS Open Data */
 const nwp = require('./server/nwp');
+/* tropical = NHC 活动飓风(自研 zip/shapefile 解析);obs = 全球 METAR 站点实况 */
+const tropical = require('./server/tropical');
+const obs = require('./server/obs');
 
 const MODELS = new Set(['gfs_raw', 'gefs_raw', 'aifs_raw', 'ecmwf_raw', 'best_match', 'gfs_seamless', 'icon_seamless', 'ecmwf_ifs025']);
 /* 可选:设置 OPEN_METEO_API_KEY 环境变量以获得更高请求配额(免费注册:https://open-meteo.com/en/docs) */
@@ -369,11 +373,11 @@ const MIME = {
   '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.map': 'application/json',
 };
 
-function serveStatic(req, res, urlPath) {
+function serveStatic(req, res, urlPath, baseDir = PUBLIC_DIR) {
   let rel = decodeURIComponent(urlPath);
   if (rel === '/' || rel === '') rel = '/index.html';
-  const abs = path.normalize(path.join(PUBLIC_DIR, rel));
-  if (!abs.startsWith(PUBLIC_DIR + path.sep) && abs !== PUBLIC_DIR) {
+  const abs = path.normalize(path.join(baseDir, rel));
+  if (!abs.startsWith(baseDir + path.sep) && abs !== baseDir) {
     res.writeHead(403); res.end('Forbidden'); return;
   }
   fs.stat(abs, (err, st) => {
@@ -540,6 +544,62 @@ const server = http.createServer(async (req, res) => {
       const data = await fetchJSON(RADAR_API);
       memSet(key, data, 4 * 60_000);
       return sendJSON(res, 200, data, 240);
+    }
+
+    /* NHC 活动飓风/热带气旋(无 CORS,由服务端代理;JMA 台风由前端直连) */
+    if (p === '/api/tropical/nhc') {
+      const data = await tropical.getNhc();
+      return sendJSON(res, 200, data, 600);
+    }
+
+    /* 全球气象站实况(METAR):优先用 Actions 烘焙的静态包,缺失则实时抓取 */
+    if (p === '/api/obs') {
+      const key = 'obs:' + Math.floor(Date.now() / 600e3);
+      const cached = memGet(key);
+      if (cached) return sendJSON(res, 200, cached, 600);
+      let data = null;
+      try {
+        const diskPath = path.join(__dirname, 'dist', 'data', 'obs', 'latest.json');
+        const stat = fs.statSync(diskPath);
+        if (Date.now() - stat.mtimeMs < 3 * 3600e3) data = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+      } catch { /* 无烘焙包 */ }
+      if (!data) data = await obs.getObs();
+      memSet(key, data, 10 * 60_000);
+      return sendJSON(res, 200, data, 600);
+    }
+
+    /* 机场航路预报 TAF:aviationweather.gov 无 CORS,服务端代理(静态模式走烘焙的 obs/taf.json) */
+    if (p === '/api/taf') {
+      const ids = (u.searchParams.get('ids') || '').toUpperCase().replace(/[^A-Z0-9,]/g, '').split(',').filter(Boolean).slice(0, 40);
+      if (!ids.length) return sendJSON(res, 400, { error: 'bad ids' });
+      const key = 'taf:' + ids.join(',');
+      const cached = memGet(key);
+      if (cached) return sendJSON(res, 200, cached, 600);
+      let data = null;
+      try {
+        const diskPath = path.join(__dirname, 'dist', 'data', 'obs', 'taf.json');
+        const stat = fs.statSync(diskPath);
+        if (Date.now() - stat.mtimeMs < 3 * 3600e3) data = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+      } catch { /* 无烘焙包 */ }
+      if (!data) {
+        const r = await fetchJSON(`https://aviationweather.gov/api/data/taf?ids=${ids.join(',')}&format=json`);
+        const arr = Array.isArray(r) ? r : [];
+        data = { generated: Math.floor(Date.now() / 1000), taf: Object.fromEntries(arr.filter((t) => t.icaoId && t.rawTAF).map((t) => [t.icaoId, [
+          t.issueTime ? Math.round(Date.parse(t.issueTime) / 1000) : null,
+          t.validTimeFrom ? Math.round(Date.parse(t.validTimeFrom) / 1000) : null,
+          t.validTimeTo ? Math.round(Date.parse(t.validTimeTo) / 1000) : null,
+          t.rawTAF,
+        ]])) };
+      } else {
+        data = { generated: data.generated, taf: Object.fromEntries(ids.map((id) => [id, data.taf[id]]).filter((x) => x[1])) };
+      }
+      memSet(key, data, 30 * 60_000);
+      return sendJSON(res, 200, data, 600);
+    }
+
+    /* 静态数据(与 Pages 生产同构):本地亦可探测 /dist/data 进入静态模式 */
+    if (p === '/dist/data' || p.startsWith('/dist/data/')) {
+      return serveStatic(req, res, p.slice('/dist/data'.length) || '/', DIST_DATA_DIR);
     }
 
     return serveStatic(req, res, p);

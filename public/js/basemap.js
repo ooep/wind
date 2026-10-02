@@ -186,3 +186,83 @@ export class VectorBasemap {
     }
   }
 }
+
+/* 陆地填充(深色底图):烘焙的 land-50m 多边形(0.83MB 本地文件,无外部瓦片依赖)。
+ * canvas 位于 overlay-root z=0 —— 气象填色层之下、地图瓦片之上;卫星/地形模式下隐藏。 */
+let landPromise = null;
+function loadLand() {
+  if (!landPromise) {
+    landPromise = fetch(new URL('../geo/land-50m.json', import.meta.url))
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
+  }
+  return landPromise;
+}
+
+export class LandFill {
+  constructor(map) {
+    this.map = map;
+    this.visible = false;
+    this.canvas = document.createElement('canvas');
+    this.canvas.id = 'landfill-canvas';
+    document.getElementById('overlay-root').appendChild(this.canvas);
+    this.ctx = this.canvas.getContext('2d');
+    this.rings = null;
+    this._raf = 0;
+    map.on('move zoom resize viewreset', () => this.schedule());
+    loadLand().then((d) => { this.rings = d.rings; this.schedule(); })
+      .catch((e) => console.error('[landfill] 陆地数据失败:', e.message));
+    this.schedule();
+  }
+
+  show(on) {
+    this.visible = on;
+    this.canvas.style.display = on ? 'block' : 'none';
+    if (on) this.schedule();
+  }
+
+  schedule() {
+    if (this._raf) return;
+    this._raf = requestAnimationFrame(() => { this._raf = 0; this.redraw(); });
+  }
+
+  redraw() {
+    if (!this.map || !this.visible) return;
+    const view = getView(this.map);
+    const dpr = view.dpr;
+    const W = Math.round(view.w * dpr), H = Math.round(view.h * dpr);
+    if (this.canvas.width !== W || this.canvas.height !== H) {
+      this.canvas.width = W; this.canvas.height = H;
+    }
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (!this.rings) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const c0 = view.containerToLatLng(0, 0), c1 = view.containerToLatLng(view.w, view.h);
+    const c2 = view.containerToLatLng(view.w, 0), c3 = view.containerToLatLng(0, view.h);
+    let minLon = Math.min(c0.lng, c1.lng, c2.lng, c3.lng);
+    let maxLon = Math.max(c0.lng, c1.lng, c2.lng, c3.lng);
+    if (maxLon - minLon >= 359) { minLon = -180; maxLon = 180; }
+    const minLat = Math.min(c0.lat, c1.lat, c2.lat, c3.lat);
+    const maxLat = Math.max(c0.lat, c1.lat, c2.lat, c3.lat);
+
+    ctx.fillStyle = '#132637';
+    ctx.strokeStyle = 'rgba(130, 170, 210, 0.10)';
+    ctx.lineWidth = 0.6;
+    for (const ring of this.rings) {
+      const [rLon0, rLat0, rLon1, rLat1] = ring.b;
+      if (rLon1 < minLon - 1 || rLon0 > maxLon + 1 || rLat1 < minLat - 1 || rLat0 > maxLat + 1) continue;
+      ctx.beginPath();
+      const r = ring.r;
+      for (let i = 0; i < r.length; i += 2) {
+        const pt = view.latLngToContainer(r[i + 1], r[i]);
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+}

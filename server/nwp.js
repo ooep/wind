@@ -51,6 +51,11 @@ class StepStore {
   stepFile(runKey, step) { return path.join(this.dir, runKey.replace('/', '-'), `m${String(step).padStart(3, '0')}.bin`); }
   doneFile(runKey, step) { return path.join(this.dir, runKey.replace('/', '-'), `m${String(step).padStart(3, '0')}.done`); }
   doneVars(runKey, step) {
+    // 捆包尺寸必须与当前变量布局一致,否则 .done 是旧布局的残留(变量集变更后失效)
+    try {
+      const sz = fs.statSync(this.stepFile(runKey, step)).size;
+      if (sz !== this.varKeys.length * this.ni * this.nj * 2) return new Set();
+    } catch { return new Set(); }
     try { return new Set(JSON.parse(fs.readFileSync(this.doneFile(runKey, step), 'utf8'))); } catch { return new Set(); }
   }
   _writeLocks = new Map();
@@ -106,13 +111,18 @@ class StepStore {
     }
     return entry;
   }
-  prune(keep = 2) {
+  prune(keep = 2, protect = []) {
+    /* 最新 keep 个 run + 当前摄取计划引用的 run(历史时间窗 P run 需显式保护) */
+    const keepSet = new Set(protect);
     let dirs = [];
     try { dirs = fs.readdirSync(this.dir).filter((d) => /^\d{8}-\d{2}$/.test(d)); } catch { return; }
-    dirs.sort();
-    while (dirs.length > keep) {
-      const old = dirs.shift();
-      fs.rmSync(path.join(this.dir, old), { recursive: true, force: true });
+    dirs.sort().reverse();
+    const kept = [];
+    for (const d of dirs) {
+      if (kept.length < keep || keepSet.has(d)) kept.push(d);
+    }
+    for (const d of dirs) {
+      if (!kept.includes(d)) fs.rmSync(path.join(this.dir, d), { recursive: true, force: true });
     }
   }
 }
@@ -374,7 +384,7 @@ class ModelEngine {
       this.run = runInfo;
       runInfo.loaded = true;
       runInfo.checkedAt = Date.now();
-      this.def.store.prune(2);
+      this.def.store.prune(2, [plan.R.key.replace('/', '-'), plan.P ? plan.P.key.replace('/', '-') : null].filter(Boolean));
       return runInfo;
     })();
     try {
@@ -705,4 +715,9 @@ function status() {
   return Object.fromEntries(Object.entries(ENGINES).map(([k, e]) => [k, e.status()]));
 }
 
-module.exports = { ENGINES, status, rhFromDewpoint };
+/* 导出内部组件:waves.js 等衍生引擎在同一框架上构建 */
+module.exports = {
+  ENGINES, status, rhFromDewpoint,
+  ModelEngine, fetchBuf, normalizeGrid, StepStore, makeSampler,
+  parseGfsStyleIdx, utcStr, ecmwfLike, S3ECMWF,
+};

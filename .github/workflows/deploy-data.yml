@@ -1,16 +1,15 @@
-name: deploy · Cloudflare Pages
+name: deploy · 数据组装发布
 
-# main 有前端更新即自动组装 _site 并发布到 Cloudflare Pages(免费版)。
-# 数据已不走 main 提交:部署前统一拉取各模式最新的数据 artifact,保证数据不回退。
+# 数据 workflow(任一)成功完成后:拉取全部四个模式的最新数据 artifact,
+# 组装 dist/data 并发布到 Cloudflare Pages。数据不再提交 main,避免仓库膨胀。
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'public/**'
-      - 'dist/data/**'
-      - 'pages-build.sh'
-      - 'tools/fetch-data-artifacts.sh'
-      - '.github/workflows/deploy-pages.yml'
+  workflow_run:
+    workflows:
+      - 'data · GFS 0.5°'
+      - 'data · GEFS 0.5°'
+      - 'data · ECMWF IFS 0.25°'
+      - 'data · ECMWF AIFS 0.25°'
+    types: [completed]
   workflow_dispatch: {}
 
 permissions:
@@ -23,6 +22,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
