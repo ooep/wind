@@ -26,8 +26,17 @@ export class AqiLayer {
     this.visible = false;
     this.group = null;
     this.data = null;
+    this.field = 'a';   // 渲染字段:a=AQI,p=PM2.5,p10,o3,no2,so2
+    this.cmap = AQI;
     this._fetchTimer = null;
     this._loading = false;
+  }
+
+  /* 切换渲染要素(图层族共用同一份数据,仅换字段与色标) */
+  setField(field, cmap) {
+    this.field = field || 'a';
+    this.cmap = cmap || AQI;
+    if (this.visible && this.data) this._render();
   }
 
   show(on) {
@@ -64,11 +73,12 @@ export class AqiLayer {
     this.group = L.layerGroup().addTo(this.map);
     const cities = (this.data && this.data.cities) || [];
     const nowH = this._nearestHour();
+    const fld = this.field;
     for (const c of cities) {
       if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) continue;
-      const a = c.a ? c.a[nowH] : null;
+      const a = c[fld] ? c[fld][nowH] : null;
       if (!Number.isFinite(a)) continue;
-      const col = rgbaOf(AQI.color(a));
+      const col = rgbaOf(this.cmap.color(a));
       const m = L.circleMarker([c.lat, c.lon], {
         radius: a > 150 ? 5 : a > 100 ? 4.4 : 3.4,
         weight: 1.1, color: 'rgba(0,0,0,0.4)', fillColor: col, fillOpacity: 0.92,
@@ -89,16 +99,18 @@ export class AqiLayer {
     const d = aqiDesc(a);
     const pick = (arr) => (arr ? arr[nowH] : null);
     const f = (v, unit, rd = 1) => (Number.isFinite(v) ? `${(+v).toFixed(rd)}${unit}` : '—');
+    const FIELDS = { a: ['US AQI', ''], p: ['PM2.5', ' μg/m³'], p10: ['PM10', ' μg/m³'], o3: ['O₃', ' μg/m³'], no2: ['NO₂', ' μg/m³'], so2: ['SO₂', ' μg/m³'] };
+    const [flabel, funit] = FIELDS[this.field] || FIELDS.a;
     const gen = this.data && this.data.generated ? new Date(this.data.generated * 1000) : null;
     return `<div class="tc-popup">
       <b>${escapeHtml(c.n || '')}</b>
       <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${gen ? `CAMS 预报 · ${gen.getHours()}:00 更新` : 'CAMS 预报'}</div>
       <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 6px">
-        <span style="font-size:26px;font-weight:700;color:${rgbaOf(AQI.color(a))}">${Math.round(a)}</span>
-        <span style="font-size:12.5px;font-weight:600">${d.grade}</span>
-        <span style="font-size:11px;opacity:.7">US AQI</span>
+        <span style="font-size:26px;font-weight:700;color:${rgbaOf(this.cmap.color(a))}">${f(a, funit, this.field === 'a' ? 0 : 1)}</span>
+        <span style="font-size:12.5px;font-weight:600">${flabel}${this.field === 'a' ? ' · ' + d.grade : ''}</span>
       </div>
       <div class="tc-grid">
+        <span>AQI</span><b>${f(pick(c.a), '', 0)}</b>
         <span>PM2.5</span><b>${f(pick(c.p), ' μg/m³')}</b>
         <span>PM10</span><b>${f(pick(c.p10), ' μg/m³')}</b>
         <span>O₃</span><b>${f(pick(c.o3), ' μg/m³')}</b>
@@ -106,7 +118,7 @@ export class AqiLayer {
         <span>SO₂</span><b>${f(pick(c.so2), ' μg/m³')}</b>
         <span>UV 指数</span><b>${f(pick(c.u), '', 1)}</b>
       </div>
-      <div style="margin-top:6px;font-size:11px;opacity:.7;line-height:1.5">${d.tip}</div>
+      <div style="margin-top:6px;font-size:11px;opacity:.7;line-height:1.5">${this.field === 'a' ? d.tip : '浓度基于 CAMS 全球模式,城市代表值'}</div>
     </div>`;
   }
 }

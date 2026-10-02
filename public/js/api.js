@@ -101,19 +101,21 @@ async function fetchVarF32(model, runKey, vk, cfg) {
   return f32FromI16B64(pack.data, pack.scale);
 }
 
-/* 确保静态 Grid 上已加载给定变量(缺失则拉取并注入;并发去重) */
+/* 确保静态 Grid 上已加载给定变量(缺失则拉取并注入;并发去重)。
+ * 变量键可带层级后缀 u@850 → 注入为 grid.vars.u(渲染层不感知层级)。 */
 export async function ensureGridVars(grid, vks) {
   if (!staticMode || !grid) return grid;
   const meta = grid.__staticMeta;
   if (!meta || meta.format !== 'per-var') return grid; // 旧格式已全量加载
   const jobs = [];
   for (const vk of vks || []) {
-    if (grid.vars[vk] || (grid.__loading && grid.__loading[vk])) continue;
+    const plain = vk.split('@')[0];
+    if (grid.vars[plain] || (grid.__loading && grid.__loading[vk])) continue;
     const cfg = meta.vars[vk];
     if (!cfg) continue; // 该模式不提供此变量 → 保持 NaN,由图层门控兜底
     grid.__loading = grid.__loading || {};
     grid.__loading[vk] = fetchVarF32(grid.__model, grid.__runKey, vk, cfg)
-      .then((f32) => { grid.vars[vk] = f32; })
+      .then((f32) => { grid.vars[plain] = f32; })
       .finally(() => { delete grid.__loading[vk]; });
     jobs.push(grid.__loading[vk]);
   }
@@ -121,11 +123,16 @@ export async function ensureGridVars(grid, vks) {
   return grid;
 }
 
+/* 层级模式的 Grid 缓存键:同一模型不同气压层是不同的变量集 */
+const LEVEL_KEYS = ['u', 'v', 'temp', 'rh'];
+
 /* 静态模式数据包 → /api/grid 同构 Grid;needs 为初始急载变量(u/v 供粒子动画) */
-async function staticModelGrid(model, needs) {
-  if (staticGrids.has(model)) {
-    const g = staticGrids.get(model);
-    if (needs) await ensureGridVars(g, needs);
+async function staticModelGrid(model, needs, level = 0) {
+  const cacheKey = level ? `${model}@${level}` : model;
+  const needKeys = (needs || []).map((vk) => (level && LEVEL_KEYS.includes(vk.split('@')[0]) ? `${vk.split('@')[0]}@${level}` : vk));
+  if (staticGrids.has(cacheKey)) {
+    const g = staticGrids.get(cacheKey);
+    if (needKeys) await ensureGridVars(g, needKeys);
     return g;
   }
   const index = await staticIndexGet();
@@ -138,7 +145,7 @@ async function staticModelGrid(model, needs) {
     if (meta && meta.grid) {
       const grid = meta.grid;
       const shape = {
-        model, source: `静态数据包(${model})`,
+        model, source: `静态数据包(${model})` + (level ? ` · ${level} hPa` : ''),
         step: grid.dlon, wrapLon: true,
         cols: grid.ni, rows: grid.nj,
         times: meta.times, generated: meta.generated,
@@ -153,8 +160,8 @@ async function staticModelGrid(model, needs) {
     }
   } catch { /* meta 缺失或损坏 → global 回退 */ }
   if (!gridObj) gridObj = await staticGlobalGrid(model, entry);
-  staticGrids.set(model, gridObj);
-  if (needs) await ensureGridVars(gridObj, needs);
+  staticGrids.set(cacheKey, gridObj);
+  if (needKeys) await ensureGridVars(gridObj, needKeys);
   return gridObj;
 }
 
@@ -355,7 +362,7 @@ function sunTimesLocal(dayStartUtcMs, lat, lon) {
 export async function fetchGrid(params) {
   await resolveMode();
   if (staticMode) {
-    const grid = await staticModelGrid(params.model, params.needs || ['u', 'v']);
+    const grid = await staticModelGrid(params.model, params.needs || ['u', 'v'], params.level || 0);
     return { grid, cached: true };
   }
   const key = cacheKey(params);

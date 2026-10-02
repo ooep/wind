@@ -69,24 +69,6 @@
 
 <!-- 右上:设置 -->
 <div id="settings">
-  <label class="ctl" title="数值预报模式(前三项为自建原始数据管道,无 key 无配额)">
-    <span>模型</span>
-    <select id="model-select">
-      <optgroup label="自建管道">
-        <option value="gfs_raw">NOAA GFS</option>
-        <option value="gefs_raw">NOAA GEFS</option>
-        <option value="ecmwf_raw">ECMWF IFS</option>
-        <option value="aifs_raw">ECMWF AIFS(AI)</option>
-        <option value="waves_raw">NOAA Wave(海浪)</option>
-      </optgroup>
-      <optgroup label="Open-Meteo 备用">
-        <option value="best_match">最佳匹配</option>
-        <option value="gfs_seamless">GFS</option>
-        <option value="icon_seamless">ICON</option>
-        <option value="ecmwf_ifs025">ECMWF</option>
-      </optgroup>
-    </select>
-  </label>
   <label class="ctl" title="底图:矢量线划不会被气象图层遮挡;深色为本地陆地填充;卫星为影像+线划混合;地形为等高线图">
     <span>底图</span>
     <select id="basemap-select">
@@ -96,9 +78,13 @@
       <option value="terrain">地形(实验)</option>
     </select>
   </label>
-  <label class="ctl" title="温度单位"><span>单位</span>
-    <select id="unit-select"><option value="c">°C</option><option value="f">°F</option></select>
-  </label>
+  <button id="units-btn" title="单位设置">
+    <svg viewBox="0 0 24 24" width="15" height="15"><path d="M3 8h18v8H3zM7 8v3M11 8v4M15 8v3M19 8v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+  </button>
+  <div id="units-pop" hidden></div>
+  <button id="legend-btn" title="图例显示 / 隐藏">
+    <svg viewBox="0 0 24 24" width="15" height="15"><rect x="3" y="10" width="18" height="4" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 6.5v1.5M12 5.5V8M17 6.5V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+  </button>
   <button id="globe-btn" title="3D 地球视图">
     <svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.6 2.4 4 5.6 4 9s-1.4 6.6-4 9c-2.6-2.4-4-5.6-4-9s1.4-6.6 4-9z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
   </button>
@@ -113,6 +99,27 @@
 </div>
 <button id="settings-toggle" title="设置">⚙</button>
 
+<!-- 右下:模型选择胶囊(Windy 式,常驻于时间轴上方) -->
+<div id="model-pill" title="数值预报模式(自建原始数据管道,无 key 无配额)">
+  <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M19.1 4.9l-2.8 2.8M7.7 16.3l-2.8 2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  <select id="model-select">
+    <optgroup label="自建管道">
+      <option value="gfs_raw">NOAA GFS</option>
+      <option value="gefs_raw">NOAA GEFS</option>
+      <option value="ecmwf_raw">ECMWF IFS</option>
+      <option value="aifs_raw">ECMWF AIFS(AI)</option>
+      <option value="waves_raw">NOAA Wave(海浪)</option>
+      <option value="ocean_raw">OISST(海温日更)</option>
+    </optgroup>
+    <optgroup label="Open-Meteo 备用">
+      <option value="best_match">最佳匹配</option>
+      <option value="gfs_seamless">GFS</option>
+      <option value="icon_seamless">ICON</option>
+      <option value="ecmwf_ifs025">ECMWF</option>
+    </optgroup>
+  </select>
+</div>
+
 <!-- 底部时间轴 -->
 <div id="timelinebar">
   <button id="play-btn" title="播放 / 暂停(空格)">
@@ -122,10 +129,16 @@
   <div id="time-display"><b id="time-main">--</b><span id="time-sub"></span></div>
   <div id="timeline">
     <div id="tl-track">
+      <div id="tl-datapast" hidden></div>
+      <div id="tl-datafcst" hidden></div>
       <div id="tl-ticks"></div>
       <div id="tl-now"></div>
       <div id="tl-thumb"></div>
     </div>
+    <div id="tl-bubble" hidden><b id="tb-a"></b><span id="tb-b"></span></div>
+  </div>
+  <div id="tl-speed" title="播放速度">
+    <button data-s="0.5">0.5×</button><button data-s="1" class="active">1×</button><button data-s="2">2×</button>
   </div>
   <div id="tl-step">
     <button id="step-back" title="后退1小时">‹</button>
@@ -133,6 +146,7 @@
     <button id="step-now" title="回到当前">现在</button>
   </div>
 </div>
+<button id="now-fab" hidden title="回到当前时刻">⟲ 回到当前</button>
 
 <!-- 点位预报面板 -->
 <aside id="panel" hidden>
@@ -170,13 +184,14 @@
       <tr><th>卫星影像</th><td><a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — NASA 官方 VIIRS/MODIS 真彩影像,每日更新。</td></tr>
       <tr><th>地名检索</th><td>Open-Meteo Geocoding(GeoNames 数据)。</td></tr>
       <tr><th>底图</th><td><a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> 矢量线划(海岸线/国界/湖泊/城市标注,已本地化,公有领域);「深色陆地」为本地渲染的陆地填充;「卫星 + 线划」影像来自 NASA GIBS;「地形」来自 <a href="https://opentopomap.org/" target="_blank" rel="noopener">OpenTopoMap</a>(CC-BY-SA)。矢量底图渲染在气象图层之上,不会被填色遮挡。</td></tr>
-      <tr><th>快捷键</th><td><b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>Esc</b> 关闭面板/弹窗/测量 · 鼠标悬停地图任意位置可读取当前图层数值 · 设置内「测距」按钮可量算距离(km/nm)与面积</td></tr>
+      <tr><th>快捷键</th><td><b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>↑</b>/<b>↓</b> 切换图层 · <b>PgUp</b>/<b>PgDn</b> 升降气压层 · <b>+</b>/<b>−</b> 缩放地图 · <b>F</b> 聚焦搜索 · <b>Esc</b> 关闭面板/弹窗/测量。鼠标悬停地图任意位置可读取当前图层数值;点击左栏底部色标可循环切换单位;时间轴右侧可调播放速度</td></tr>
     </table>
     <p>开放数据许可:NOAA GFS 为美国官方产出(public domain);Open-Meteo 数据 CC BY 4.0(非商业免费,商业使用需授权)。本站为技术演示,不构成任何气象决策依据。</p>
   </div>
 </dialog>
 
 <div id="toast" hidden></div>
+<div id="hint" hidden></div>
 <div id="grid-loading" hidden><div class="spinner"></div><span>正在加载气象场数据…</span></div>
 <div id="cursor-tip" hidden><b id="ct-val"></b><span id="ct-sub"></span></div>
 
@@ -212,6 +227,6 @@
   window.addEventListener('error', (e) => window.__capt.push('ERR ' + e.message + ':' + e.lineno));
 </script>
 <script src="vendor/leaflet/leaflet.js"></script>
-<script type="module" src="js/main.js?v=6"></script>
+<script type="module" src="js/main.js?v=7"></script>
 </body>
 </html>

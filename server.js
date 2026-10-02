@@ -36,7 +36,7 @@ const tropical = require('./server/tropical');
 const obs = require('./server/obs');
 const aq = require('./server/aq');
 
-const MODELS = new Set(['gfs_raw', 'gefs_raw', 'aifs_raw', 'ecmwf_raw', 'waves_raw', 'best_match', 'gfs_seamless', 'icon_seamless', 'ecmwf_ifs025']);
+const MODELS = new Set(['gfs_raw', 'gefs_raw', 'aifs_raw', 'ecmwf_raw', 'waves_raw', 'ocean_raw', 'best_match', 'gfs_seamless', 'icon_seamless', 'ecmwf_ifs025']);
 /* 可选:设置 OPEN_METEO_API_KEY 环境变量以获得更高请求配额(免费注册:https://open-meteo.com/en/docs) */
 const API_KEY = process.env.OPEN_METEO_API_KEY || '';
 const HOURLY_VARS = [
@@ -221,6 +221,36 @@ function findStaleGrid(model, lats, lons) {
     } catch { continue; }
   }
   return null;
+}
+
+
+/* ocean_raw(海温):开发模式下直接读 dist/data 的静态包,返回 /api/grid 同构全球网格 */
+let oceanGridCache = null;
+function oceanStaticGrid() {
+  if (oceanGridCache && Date.now() - oceanGridCache.at < 10 * 60e3) return oceanGridCache.grid;
+  try {
+    const root = path.join(__dirname, 'dist', 'data', 'ocean_raw');
+    const run = fs.readdirSync(root).filter((d) => /^\d{8}-\d{2}$/.test(d)).sort().pop();
+    if (!run) return null;
+    const meta = JSON.parse(fs.readFileSync(path.join(root, run, 'meta.json'), 'utf8'));
+    const pack = JSON.parse(fs.readFileSync(path.join(root, run, meta.vars.sst.file), 'utf8'));
+    const i16 = new Int16Array(Buffer.from(pack.data, 'base64').buffer);
+    const f32 = new Float32Array(i16.length);
+    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] === -32768 ? NaN : i16[i] / pack.scale;
+    const { ni, nj, lon0, dlon, lat0, dlat } = meta.grid;
+    const lats = []; for (let j = 0; j < nj; j++) lats.push(+(lat0 - j * dlat).toFixed(4));
+    const lons = []; for (let i = 0; i < ni; i++) lons.push(+(lon0 + i * dlon).toFixed(4));
+    const f32b64 = (arr) => Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString('base64');
+    const grid = {
+      model: 'ocean_raw', source: 'NOAA OISST 日更海温(NCEI)· 静态包',
+      step: dlon, wrapLon: true, cols: ni, rows: nj,
+      times: meta.times, generated: meta.generated,
+      lat0: lats[0], lat1: lats[lats.length - 1], lon0: lons[0], lon1: lons[lons.length - 1],
+      lats, lons, vars: { sst: f32b64(f32) },
+    };
+    oceanGridCache = { at: Date.now(), grid };
+    return grid;
+  } catch { return null; }
 }
 
 async function fetchGrid(model, w, s, e, n, stepIn) {
@@ -469,6 +499,11 @@ const server = http.createServer(async (req, res) => {
       }
       if (model === 'waves_raw') {
         const grid = await waves.engine.rawGrid(w, s, east, n, step);
+        return sendJSON(res, 200, { ...grid, fetchMs: Date.now() - t0 });
+      }
+      if (model === 'ocean_raw') {
+        const grid = oceanStaticGrid();
+        if (!grid) return sendJSON(res, 503, { error: 'ocean_raw 静态包未生成,先运行 tools/bake-sst.py' });
         return sendJSON(res, 200, { ...grid, fetchMs: Date.now() - t0 });
       }
       const grid = await fetchGrid(model, w, s, east, n, step);

@@ -39,6 +39,7 @@ fetch_model "update-gefs.yml"  "gefs_raw"
 fetch_model "update-ecmwf.yml" "ecmwf_raw"
 fetch_model "update-aifs.yml"  "aifs_raw"
 fetch_model "update-waves.yml" "waves_raw"
+fetch_model "update-sst.yml"   "ocean_raw"
 
 # 观测类:一个 artifact 打包 obs/tropical/aq 三个目录(与 NWP 模式单独目录不同)
 fetch_obs() {

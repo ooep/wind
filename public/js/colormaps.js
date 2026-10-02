@@ -174,10 +174,37 @@ export const AQI = makeScale([
   [400, 128, 34, 56, 248], [500, 110, 26, 40, 250],
 ]);
 
+/* 海温 °C(OISST,冷舌紫 → 暖池红) */
+export const SST = makeScale([
+  [-2, 70, 40, 120, 235], [2, 30, 80, 180, 235], [8, 30, 150, 210, 235],
+  [14, 50, 200, 170, 235], [20, 120, 225, 110, 236], [25, 244, 224, 80, 238],
+  [29, 244, 150, 52, 240], [32, 228, 62, 52, 244], [36, 160, 24, 90, 248],
+]);
+
+/* 污染物浓度 μg/m³(灰绿 → 黄 → 橙 → 紫黑) */
+export const PM25 = makeScale([
+  [0, 120, 200, 140, 225], [12, 160, 214, 130, 228], [35, 244, 232, 100, 232],
+  [75, 240, 148, 66, 236], [115, 230, 72, 62, 240], [150, 168, 60, 170, 244],
+  [250, 110, 26, 40, 250],
+]);
+export const NO2 = makeScale([
+  [0, 120, 200, 140, 225], [25, 200, 222, 110, 228], [50, 244, 210, 90, 232],
+  [100, 240, 130, 60, 236], [150, 220, 60, 62, 240], [250, 140, 30, 120, 246],
+]);
+export const O3 = makeScale([
+  [0, 120, 200, 140, 225], [60, 200, 222, 110, 228], [100, 244, 210, 90, 232],
+  [140, 240, 130, 60, 236], [180, 220, 60, 62, 240], [240, 140, 30, 120, 246],
+]);
+export const SO2 = makeScale([
+  [0, 120, 200, 140, 225], [20, 200, 222, 110, 228], [40, 244, 210, 90, 232],
+  [80, 240, 130, 60, 236], [120, 220, 60, 62, 240], [200, 140, 30, 120, 246],
+]);
+
 export const COLORMAPS = {
   wind: WIND, temp: TEMP, msl: MSL, precip: PRECIP, cloud: CLOUD, rh: RH,
   feels: TEMP, dew: DEW, ptype: PTYPE, cape: CAPE, snow: SNOWCM, vis: VIS,
   gust: WIND, pwat: PWAT, cwat: CWAT, lcdc: CLOUD, mcdc: CLOUD, hcdc: CLOUD,
   newsnow: NEWSNOW, soilw: SOILW, soilt: TEMP, frzlvl: FRZLVL, cin: CIN,
   wvh: WAVES, wvp: WPER, aqi: AQI,
+  wetbulb: TEMP, sst: SST, pm25: PM25, no2: NO2, o3: O3, so2: SO2,
 };

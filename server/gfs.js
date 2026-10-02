@@ -21,10 +21,16 @@ const MAX_F = 168;            // 取到 +168h(7 天)
 const HOURLY_H = 48;          // 逐小时步长上限(GFS pgrb2 原生逐小时,此处取 48h 平衡体量)
 const STEP_H = 3;             // 逐小时段之外的存储步长
 const stepCadence = (step) => (step <= HOURLY_H ? 1 : STEP_H);
-function buildSteps() {
+function buildSteps(levelMode) {
   const a = [];
-  for (let s = 0; s <= HOURLY_H; s++) a.push(s);
-  for (let s = HOURLY_H + STEP_H; s <= MAX_F; s += STEP_H) a.push(s);
+  if (levelMode) {
+    // 气压层:控制摄取量,+48h 内 3 小时步长,其后 6 小时
+    for (let s = 0; s <= HOURLY_H; s += STEP_H) a.push(s);
+    for (let s = HOURLY_H + 2 * STEP_H; s <= MAX_F; s += 2 * STEP_H) a.push(s);
+  } else {
+    for (let s = 0; s <= HOURLY_H; s++) a.push(s);
+    for (let s = HOURLY_H + STEP_H; s <= MAX_F; s += STEP_H) a.push(s);
+  }
   return a;
 }
 const CONCURRENCY = 10;
@@ -58,7 +64,7 @@ const VARS = {
 };
 
 /* 气压层变量(按需摄取):该层的风/温/湿 */
-const LEVELS = [925, 850, 700, 500, 300];
+const LEVELS = [925, 850, 700, 500, 300, 250, 200, 150, 100];
 function levelVars(level) {
   return {
     u: { grib: 'UGRD', level: `${level} mb`, scale: 100, conv: (v) => v },
@@ -174,9 +180,10 @@ async function fetchMessage(url, recs, rec) {
 /* ---------------- 引擎(地面 / 气压层通用) ---------------- */
 
 class GfsEngine {
-  constructor({ varCfg, dirName }) {
+  constructor({ varCfg, dirName, levelMode = false }) {
     this.varCfg = varCfg;
     this.varKeys = Object.keys(varCfg);
+    this.levelMode = levelMode; // 气压层引擎:粗步长摄取(控量)
     this.dir = path.join(CACHE_DIR, dirName);
     this.run = null;
     this.loadingPromise = null;
@@ -291,7 +298,7 @@ class GfsEngine {
     }
     const times = [];
     const pastStart = Date.now() - PAST_H * 3600e3;
-    const steps = buildSteps();
+    const steps = buildSteps(this.levelMode);
     if (P) {
       for (const step of steps) {
         const ms = P.init + step * 3600e3;
@@ -489,7 +496,7 @@ const levelEngines = new Map();
 function levelEngine(level) {
   if (!LEVELS.includes(level)) throw new Error(`不支持的气压层 ${level}`);
   if (!levelEngines.has(level)) {
-    levelEngines.set(level, new GfsEngine({ varCfg: levelVars(level), dirName: `gfsraw-l${level}` }));
+    levelEngines.set(level, new GfsEngine({ varCfg: levelVars(level), dirName: `gfsraw-l${level}`, levelMode: true }));
   }
   return levelEngines.get(level);
 }
@@ -667,4 +674,10 @@ function status() {
   };
 }
 
-module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface };
+/* 气压层全球粗网格(静态构建用):仅该层的 u/v/temp/rh */
+async function levelRawGrid(level, w, s, e, n, stepDeg) {
+  const lev = await levelEngine(level).gridCore(w, s, e, n, stepDeg);
+  return { ...lev, vars: Object.fromEntries(Object.entries(lev.vars).filter(([k]) => ['u', 'v', 'temp', 'rh'].includes(k))) };
+}
+
+module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, levelRawGrid };

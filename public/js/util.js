@@ -131,6 +131,16 @@ export class Grid {
       const td = (243.5 * Math.log(e / 6.112)) / (17.67 - Math.log(e / 6.112));
       return Number.isFinite(td) ? td : NaN;
     }
+    if (varName === 'wetbulb') {
+      // 湿球温度(Stull 2011 拟合式,RH 5-99%、T -20~50°C 内适用)
+      const t = this._bilinear('temp', lon, lat, fr);
+      const rh = this._bilinear('rh', lon, lat, fr);
+      if (Number.isNaN(t) || Number.isNaN(rh) || rh < 0) return NaN;
+      const h = Math.max(5, Math.min(99.99, rh));
+      return t * Math.atan(Math.sqrt(0.151977 * h + 8.313659))
+        + Math.atan(t + h) - Math.atan(h - 1.676331)
+        + 0.00391838 * Math.pow(h, 1.5) * Math.atan(0.023101 * h) - 4.686035;
+    }
     if (varName === 'ptype') {
       // 降水相态:0 无 1 雨 2 冻雨 3 雪(由温度与降水强度推导)
       const t = this._bilinear('temp', lon, lat, fr);

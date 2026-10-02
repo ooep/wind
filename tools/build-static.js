@@ -39,16 +39,18 @@ const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_D
 
 /* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
 function varScale(model, vk) {
+  const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
+  if (model === 'ocean_raw') return base === 'sst' ? 100 : 1;
   if (model === 'gfs_raw') {
-    const cfg = gfs.surfaceEngine.varCfg[vk];
+    const cfg = gfs.surfaceEngine.varCfg[base];
     if (cfg) return cfg.scale;
   } else {
     if (model === 'waves_raw') {
-      const cfg = waves.engine.def.varCfg[vk];
+      const cfg = waves.engine.def.varCfg[base];
       if (cfg && cfg.scale) return cfg.scale;
     }
     const eng = require('../server/nwp').ENGINES[model];
-    const cfg = eng && eng.def.varCfg[vk];
+    const cfg = eng && eng.def.varCfg[base];
     if (cfg && cfg.scale) return cfg.scale;
   }
   return 1;
@@ -138,6 +140,30 @@ async function main() {
       console.log(`  v_${vk}.json ${(fs.statSync(file).size / 1e6).toFixed(2)} MB`);
     }
     console.log(`  ${Object.keys(coarse.vars).length} 个变量,共 ${(total / 1e6).toFixed(1)} MB`);
+
+    // GFS 气压层包:每层 u/v/temp/rh 一个文件(键 u@850 → v_u_L850.json),前端按层级懒加载
+    if (model === 'gfs_raw') {
+      for (const level of gfs.LEVELS) {
+        const lg = await gfs.levelRawGrid(level, -180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
+        for (const [vk, b64] of Object.entries(lg.vars)) {
+          const f32 = Buffer.from(b64, 'base64');
+          const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
+          const scale = varScale(model, vk);
+          const q = new Int16Array(vals.length);
+          for (let i = 0; i < vals.length; i++) {
+            const v = vals[i];
+            q[i] = Number.isNaN(v) ? -32768 : Math.max(-32767, Math.min(32767, Math.round(v * scale)));
+          }
+          const key = `${vk}@${level}`;
+          const file = path.join(outDir, `v_${vk}_L${level}.json`);
+          fs.writeFileSync(file, JSON.stringify({ scale, data: Buffer.from(q.buffer).toString('base64') }));
+          total += fs.statSync(file).size;
+          varsManifest[key] = { scale, file: `v_${vk}_L${level}.json` };
+        }
+        console.log(`  气压层 ${level} hPa 完成`);
+      }
+      fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta)); // 回写含层级键的 meta
+    }
 
     // 0.5° 区域分块(实验性增强包)
     if (WANT_TILES) {

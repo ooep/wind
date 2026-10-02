@@ -3,6 +3,7 @@ import { fetchPoint, fetchPointModel, fetchMarine } from './api.js';
 import { nearestAirports, fetchObs, fetchTaf, fetchAirgram, fetchAirQuality, aqiBand, uvBand } from './pointdata.js';
 import { TEMP } from './colormaps.js';
 import { fmtTime, fmtHourLocal, weekday, fmtDay } from './util.js';
+import { convV, unitLabel, fmtPresStr, fmtPrecipStr } from './units.js';
 
 const WMO = {
   0: ['晴', '☀️'], 1: ['基本晴', '🌤️'], 2: ['多云', '⛅'], 3: ['阴', '☁️'],
@@ -112,7 +113,7 @@ export class ForecastPanel {
       ? ` · 缓存于 ${p2(new Date(d.cachedAt * 1000).getHours())}:${p2(new Date(d.cachedAt * 1000).getMinutes())}(上游限流)`
       : '';
 
-    const windDisp = (ms) => (ms == null || Number.isNaN(ms)) ? '—' : `${ms.toFixed(1)} m/s`;
+    const windDisp = (ms) => (ms == null || Number.isNaN(ms)) ? '—' : `${convV('wind', ms).toFixed(1)} ${unitLabel('wind')}`;
 
     this.content.innerHTML = `
       <div class="pcur">
@@ -126,9 +127,9 @@ export class ForecastPanel {
         <div class="pstat"><b>${windDisp(cur.wind_speed_10m)}</b><span>风速 ${dir}</span></div>
         <div class="pstat"><b>${windDisp(cur.wind_gusts_10m)}</b><span>阵风</span></div>
         <div class="pstat"><b>${Math.round(cur.relative_humidity_2m)}%</b><span>相对湿度</span></div>
-        <div class="pstat"><b>${Math.round(cur.pressure_msl)} hPa</b><span>海平面气压</span></div>
+        <div class="pstat"><b>${fmtPresStr(cur.pressure_msl)} ${unitLabel('pressure')}</b><span>海平面气压</span></div>
         <div class="pstat"><b>${Math.round(cur.cloud_cover)}%</b><span>云量</span></div>
-        <div class="pstat"><b>${cur.precipitation ?? 0} mm</b><span>当前降水</span></div>
+        <div class="pstat"><b>${fmtPrecipStr(cur.precipitation ?? 0)} ${unitLabel('precip')}</b><span>当前降水</span></div>
       </div>
       <div class="ptabs">
         <button data-tab="48h" class="active">48 小时</button>

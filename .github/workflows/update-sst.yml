@@ -1,0 +1,41 @@
+name: data · OISST 海温(日更)
+
+# 海温管道:NOAA OISST v2.1 日更分析场(NCEI,0.25° NetCDF4,无 key 无配额)
+# → python 解码降采样 → per-var 静态包 → 上传 artifact(deploy-data 统一组装部署)。
+# 模式 id:ocean_raw(独立于 NWP 引擎,日更一次,时间轴 2 帧)。
+
+on:
+  schedule:
+    - cron: '35 9 * * *'   # UTC 09:35,OISST 前一日文件已发布
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-sst
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install --quiet netCDF4 numpy
+
+      - name: 烘焙海温静态包
+        run: python3 tools/bake-sst.py dist/data
+
+      - name: 上传数据 artifact(deploy-data 统一组装部署)
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-ocean_raw
+          path: dist/data/ocean_raw
+          retention-days: 3
