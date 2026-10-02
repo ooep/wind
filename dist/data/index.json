@@ -1,6 +1,11 @@
 {
-  "generated": 1790912284,
+  "generated": 1790914573,
   "models": {
+    "aifs_raw": {
+      "runKey": "20261001-18",
+      "meta": "meta.json",
+      "global": "global-2.5.json"
+    },
     "ecmwf_raw": {
       "runKey": "20261001-18",
       "meta": "meta.json",
