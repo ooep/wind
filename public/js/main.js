@@ -1,7 +1,7 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
 import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, gphCmap } from './colormaps.js';
-import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels } from './api.js';
+import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
 import { IsobarLayer } from './layers/isobars.js';
@@ -99,8 +99,8 @@ const LAYERS = [
   { id: 'precip72', label: '降水·72h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip72', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ['—', '雨', '冻雨', '雪'][Math.round(v)] || '' },
   { id: 'vis', label: '能见度', unit: 'km', cmap: VIS, variable: 'vis', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
-  { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_snow'], autoModel: true },
-  { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_snow'], autoModel: true },
+  { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
+  { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
   { id: 'cape', label: '雷暴 CAPE', unit: 'J/kg', cmap: CAPE, variable: 'cape', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
@@ -361,8 +361,9 @@ function openGroupOf(layerId) {
 
 async function setLayer(id, silent = false) {
   const def0 = layerById(id);
-  /* 雪包等专用图层:自动切换到提供该图层的模式,免去手动选模式 */
-  if (!layerAvailable(def0, state.model) && def0.autoModel) {
+  /* 雪包等专用图层:专用模式有数据时自动切换升级;未上线则留在当前模式,
+   * 用其兼容变量版本先顶着(如 gfs_raw 的 2.5° 雪),避免点开空白 */
+  if (def0.autoModel && def0.models[0] !== state.model && staticHasModel(def0.models[0])) {
     state.model = def0.models[0];
     document.getElementById('model-select').value = state.model;
     window.__currentModelLabel = MODEL_LABELS[state.model];
