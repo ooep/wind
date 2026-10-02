@@ -55,7 +55,7 @@ jobs:
           # 只保留各模式最新一轮 run,防止仓库膨胀
           find dist/data -mindepth 2 -maxdepth 2 -type d -name '20*' -mtime +2 -exec rm -rf {} + 2>/dev/null || true
           node tools/build-static.js --out dist/data --index-only
-          git add dist/data
+          git add -A -f dist/data
           git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
           for i in 1 2 3 4 5; do
             git push origin main && break

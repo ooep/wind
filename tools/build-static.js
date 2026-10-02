@@ -40,11 +40,18 @@ async function main() {
     const models = {};
     try {
       for (const d of fs.readdirSync(OUT)) {
-        const metaPath = path.join(OUT, d, 'meta.json');
-        const globalFile = path.join(OUT, d, `global-${COARSE_DEG}.json`);
-        if (!fs.existsSync(metaPath) || !fs.existsSync(globalFile)) continue;
-        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-        models[d] = { runKey: meta.runKey, meta: 'meta.json', global: `global-${COARSE_DEG}.json` };
+        const modelDir = path.join(OUT, d);
+        let runs = [];
+        try { runs = fs.readdirSync(modelDir).filter((r) => /^\d{8}-\d{2}$/.test(r)).sort(); } catch { continue; }
+        /* runKey 目录名含时间戳,字典序即时序;取最新且产物齐全的一轮 */
+        for (const r of runs.reverse()) {
+          const metaPath = path.join(modelDir, r, 'meta.json');
+          const globalFile = path.join(modelDir, r, `global-${COARSE_DEG}.json`);
+          if (!fs.existsSync(metaPath) || !fs.existsSync(globalFile)) continue;
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+          models[d] = { runKey: meta.runKey || r, meta: 'meta.json', global: `global-${COARSE_DEG}.json` };
+          break;
+        }
       }
     } catch { /* 目录不存在 */ }
     fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ generated: Math.floor(Date.now() / 1000), models }, null, 2));
