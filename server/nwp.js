@@ -235,8 +235,10 @@ function normalizeGrid(dec, grid, cfg) {
   const src = dec.values;
   const srcW = dec.grid.ni, srcH = dec.grid.nj;
   if (srcW !== ni && srcW !== ni * 2) throw new Error(`源网格宽度异常 ${srcW} vs ${ni}`);
-  if (srcH !== nj && srcH !== nj * 2) throw new Error(`源网格高度异常 ${srcH} vs ${nj}`);
-  const sx = (srcW / ni) | 0, sy = (srcH / nj) | 0;
+  /* 0.25° 全球网格为 721 行(奇数),2× 降采样按 (nj*2-1) 容忍 */
+  if (srcH !== nj && srcH !== nj * 2 && srcH !== nj * 2 - 1) throw new Error(`源网格高度异常 ${srcH} vs ${nj}`);
+  /* 0.25° 全球网格 721 行:721/361=1.997,必须四舍五入到 2,整除截断会把场纵向压扁 */
+  const sx = Math.round(srcW / ni), sy = Math.round(srcH / nj);
   const out = new Int16Array(nj * ni);
   const flipped = dec.grid.la1 < dec.grid.la2;
   for (let j = 0; j < nj; j++) {
