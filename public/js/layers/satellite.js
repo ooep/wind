@@ -3,6 +3,7 @@
  * 全球每日图层(按太阳高度角选真彩/夜光),避免出现黑区。
  * 与时间轴联动:静止卫星取 ≤ 时刻最近的 10 分钟帧,每日图层取对应 UTC 日期。 */
 import { clamp } from '../util.js';
+import { t, has } from '../i18n.js';
 
 const GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 
@@ -55,6 +56,11 @@ const CHANNELS = {
     daily: true, passHour: 2.5, attribution: 'NASA GIBS / VIIRS 昼夜波段',
   },
 };
+
+/* 通道名按界面语言取词(词典缺键回落定义处标签) */
+for (const [k, ch] of Object.entries(CHANNELS)) {
+  if (has('satCh.' + k)) Object.defineProperty(ch, 'label', { get: () => t('satCh.' + k), configurable: true });
+}
 
 /* 静止卫星圆盘有效半径(度):ABI/AHI 全圆盘约 ±80°,留边取 78 */
 const DISK_RADIUS = 78;

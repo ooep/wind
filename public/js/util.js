@@ -1,5 +1,6 @@
 /* 工具:Web 墨卡托投影(与 Leaflet 一致)、格点数据访问器、通用 helpers */
 import { inLakeBox } from './lakemasks.js';
+import { ta } from './i18n.js';
 
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -329,8 +330,9 @@ export function fmtHourLocal(ms) {
   const d = new Date(ms);
   return `${p2(d.getHours())}:00`;
 }
-export const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-export function weekday(ms) { return WEEKDAYS[new Date(ms).getDay()]; }
+/* 星期名按界面语言取词(i18n weekdays) */
+export const weekdayNames = () => ta('weekdays');
+export function weekday(ms) { return ta('weekdays')[new Date(ms).getDay()] || ''; }
 
 /* 体感温度(Steadman 简化式) */
 function apparentTemp(tC, rh, ws) {

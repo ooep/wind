@@ -5,6 +5,7 @@
  *  - 交互:拖拽旋转 / 滚轮缩放 / 点击查该点预报;空闲 4s 后自转
  */
 import * as THREE from '../vendor/three/three.module.min.js';
+import { t } from './i18n.js';
 import { WIND, WAVES } from './colormaps.js';
 
 const D2R = Math.PI / 180;
@@ -42,7 +43,7 @@ export class GlobeView {
     if (!this.inited) {
       this.inited = true;
       this._initThree();
-      this._loadGeo().then(() => this._bakeEarth()).catch((e) => this.toast(`地球底图加载失败:${e.message}`));
+      this._loadGeo().then(() => this._bakeEarth()).catch((e) => this.toast(t('globe.err', { msg: e.message })));
     }
     this._resize();
     this._loop();
@@ -61,8 +62,8 @@ export class GlobeView {
     wrap.id = 'globe-wrap';
     wrap.innerHTML = `
       <div id="globe-legend"><b id="globe-legend-title"></b><i id="globe-legend-bar"></i><span id="globe-legend-labels"></span></div>
-      <button id="globe-exit" title="返回 2D 地图">✕ 返回地图</button>
-      <div id="globe-hint">拖拽旋转 · 滚轮缩放 · 点击查询该点</div>`;
+      <button id="globe-exit" title="${t('globe.backTitle')}">${t('globe.back')}</button>
+      <div id="globe-hint">${t('globe.hint')}</div>`;
     document.body.appendChild(wrap);
     this.wrap = wrap;
     wrap.querySelector('#globe-exit').addEventListener('click', () => this.hide());

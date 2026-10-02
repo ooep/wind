@@ -4,29 +4,21 @@ import { nearestAirports, fetchObs, fetchTaf, fetchAirgram, fetchAirQuality, aqi
 import { TEMP } from './colormaps.js';
 import { fmtTime, fmtHourLocal, weekday, fmtDay } from './util.js';
 import { convV, unitLabel, fmtPresStr, fmtPrecipStr } from './units.js';
+import { t, ta, has } from './i18n.js';
 
-const WMO = {
-  0: ['晴', '☀️'], 1: ['基本晴', '🌤️'], 2: ['多云', '⛅'], 3: ['阴', '☁️'],
-  45: ['雾', '🌫️'], 48: ['雾凇', '🌫️'], 51: ['小毛毛雨', '🌦️'], 53: ['毛毛雨', '🌦️'],
-  55: ['浓毛毛雨', '🌧️'], 56: ['冻毛毛雨', '🌧️'], 57: ['浓冻毛毛雨', '🌧️'],
-  61: ['小雨', '🌦️'], 63: ['中雨', '🌧️'], 65: ['大雨', '🌧️'],
-  66: ['冻雨', '🌧️'], 67: ['强冻雨', '🌧️'],
-  71: ['小雪', '🌨️'], 73: ['中雪', '🌨️'], 75: ['大雪', '❄️'], 77: ['雪粒', '❄️'],
-  80: ['小阵雨', '🌦️'], 81: ['阵雨', '🌧️'], 82: ['强阵雨', '⛈️'],
-  85: ['阵雪', '🌨️'], 86: ['强阵雪', '🌨️'],
-  95: ['雷暴', '⛈️'], 96: ['雷暴伴冰雹', '⛈️'], 99: ['强雷暴伴冰雹', '⛈️'],
+/* 天气现象文字按语言取词(i18n wmo.<code>),图标与语言无关 */
+const WMO_EMOJI = {
+  0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️', 45: '🌫️', 48: '🌫️', 51: '🌦️', 53: '🌦️',
+  55: '🌧️', 56: '🌧️', 57: '🌧️', 61: '🌦️', 63: '🌧️', 65: '🌧️', 66: '🌧️', 67: '🌧️',
+  71: '🌨️', 73: '🌨️', 75: '❄️', 77: '❄️', 80: '🌦️', 81: '🌧️', 82: '⛈️',
+  85: '🌨️', 86: '🌨️', 95: '⛈️', 96: '⛈️', 99: '⛈️',
 };
-const wmo = (c) => WMO[c] || ['—', '🌡️'];
+const wmo = (c) => [(has('wmo.' + c) ? t('wmo.' + c) : '—'), WMO_EMOJI[c] || '🌡️'];
 const p2 = (n) => String(n).padStart(2, '0');
 /* 点位预报固定走大气基准模式:海浪/海温/化学/雪包等专用模式无完整大气要素,
  * 点击点位始终展示通用天气面板(海浪详情由「海浪」标签页按需获取,与模式无关) */
 const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
-const POINT_MODEL_LABELS = {
-  gfs_raw: 'NOAA GFS 0.5°(自建管道)', gefs_raw: 'NOAA GEFS 0.5°(自建管道)',
-  ecmwf_raw: 'ECMWF IFS 0.25°(自建管道)', aifs_raw: 'ECMWF AIFS 0.25°(自建管道)',
-  best_match: 'Open-Meteo 最佳匹配', gfs_seamless: 'Open-Meteo GFS',
-  icon_seamless: 'Open-Meteo ICON', ecmwf_ifs025: 'Open-Meteo ECMWF',
-};
+const POINT_MODEL_LABELS = new Proxy({}, { get: (_, m) => t('panelModel.' + String(m)) });
 let degUnit = 'c';
 export function setDegUnit(u) { degUnit = u; }
 export const toDeg = (c) => (degUnit === 'f' ? c * 9 / 5 + 32 : c);
@@ -60,7 +52,7 @@ export class ForecastPanel {
     this.compareData = null;
     this._tabCache = {};
     this.el.hidden = false;
-    this.title.textContent = name || '定位中…';
+    this.title.textContent = name || t('panel.locating');
     this.coords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
     this.content.hidden = true;
     this.loading.style.display = 'block';
@@ -84,7 +76,7 @@ export class ForecastPanel {
     let favs = ForecastPanel.favs();
     const hit = favs.some((f) => Math.abs(f.lat - this.lat) < 0.01 && Math.abs(f.lon - this.lon) < 0.01);
     if (hit) favs = favs.filter((f) => !(Math.abs(f.lat - this.lat) < 0.01 && Math.abs(f.lon - this.lon) < 0.01));
-    else favs.push({ name: this.placeName || `${this.lat.toFixed(2)}, ${this.lon.toFixed(2)}`, lat: this.lat, lon: this.lon });
+    else favs.push({ name: this.placeName || t('panel.fallbackName', { lat: this.lat.toFixed(2), lon: this.lon.toFixed(2) }), lat: this.lat, lon: this.lon });
     localStorage.setItem('fy_favs', JSON.stringify(favs.slice(-20)));
     this._updateFav();
     document.dispatchEvent(new CustomEvent('favs-changed'));
@@ -103,9 +95,9 @@ export class ForecastPanel {
       this._render();
     } catch (e) {
       this.loading.style.display = 'none';
-      this.title.textContent = '加载失败';
+      this.title.textContent = t('panel.loadFail');
       this.content.hidden = false;
-      this.content.innerHTML = `<p style="color:var(--text-dim);font-size:13px">${e.message},请稍后重试。</p>`;
+      this.content.innerHTML = `<p style="color:var(--text-dim);font-size:13px">${t('panel.errBody', { msg: e.message })}</p>`;
     }
   }
 
@@ -115,11 +107,11 @@ export class ForecastPanel {
     const [desc, icon] = wmo(cur.weather_code);
     this.title.textContent = `${desc} · ${Math.round(toDeg(cur.temperature_2m))}°`;
     if (Number.isFinite(d.elevation)) {
-      this.coords.textContent += ` · 海拔 ${Math.round(d.elevation)} m`;
+      this.coords.textContent += t('panel.elev', { n: Math.round(d.elevation) });
     }
     const dir = compass(cur.wind_direction_10m);
     const staleNote = d.stale
-      ? ` · 缓存于 ${p2(new Date(d.cachedAt * 1000).getHours())}:${p2(new Date(d.cachedAt * 1000).getMinutes())}(上游限流)`
+      ? t('panel.cachedAt', { t: `${p2(new Date(d.cachedAt * 1000).getHours())}:${p2(new Date(d.cachedAt * 1000).getMinutes())}` })
       : '';
 
     const windDisp = (ms) => (ms == null || Number.isNaN(ms)) ? '—' : `${convV('wind', ms).toFixed(1)} ${unitLabel('wind')}`;
@@ -129,30 +121,30 @@ export class ForecastPanel {
         <div class="pcur-icon">${cur.is_day ? icon : (cur.weather_code === 0 || cur.weather_code === 1 ? '🌙' : icon)}</div>
         <div>
           <div class="pcur-temp">${Math.round(toDeg(cur.temperature_2m))}<sup>°${degUnit.toUpperCase()}</sup></div>
-          <div class="pcur-desc">${desc} · 体感 ${Math.round(toDeg(cur.apparent_temperature))}°</div>
+          <div class="pcur-desc">${desc} · ${t('pstat.feels', { v: Math.round(toDeg(cur.apparent_temperature)) })}</div>
         </div>
       </div>
       <div class="pgrid">
-        <div class="pstat"><b>${windDisp(cur.wind_speed_10m)}</b><span>风速 ${dir}</span></div>
-        <div class="pstat"><b>${windDisp(cur.wind_gusts_10m)}</b><span>阵风</span></div>
-        <div class="pstat"><b>${Math.round(cur.relative_humidity_2m)}%</b><span>相对湿度</span></div>
-        <div class="pstat"><b>${fmtPresStr(cur.pressure_msl)} ${unitLabel('pressure')}</b><span>海平面气压</span></div>
-        <div class="pstat"><b>${Math.round(cur.cloud_cover)}%</b><span>云量</span></div>
-        <div class="pstat"><b>${fmtPrecipStr(cur.precipitation ?? 0)} ${unitLabel('precip')}</b><span>当前降水</span></div>
+        <div class="pstat"><b>${windDisp(cur.wind_speed_10m)}</b><span>${t('pstat.wind', { dir })}</span></div>
+        <div class="pstat"><b>${windDisp(cur.wind_gusts_10m)}</b><span>${t('pstat.gust')}</span></div>
+        <div class="pstat"><b>${Math.round(cur.relative_humidity_2m)}%</b><span>${t('pstat.rh')}</span></div>
+        <div class="pstat"><b>${fmtPresStr(cur.pressure_msl)} ${unitLabel('pressure')}</b><span>${t('pstat.msl')}</span></div>
+        <div class="pstat"><b>${Math.round(cur.cloud_cover)}%</b><span>${t('pstat.cloud')}</span></div>
+        <div class="pstat"><b>${fmtPrecipStr(cur.precipitation ?? 0)} ${unitLabel('precip')}</b><span>${t('pstat.precipNow')}</span></div>
       </div>
       <div class="ptabs">
-        <button data-tab="48h" class="active">48 小时</button>
-        <button data-tab="mg">气象图</button>
-        <button data-tab="7d">7 天</button>
-        <button data-tab="ag">剖面</button>
-        <button data-tab="ap">机场</button>
-        <button data-tab="aq">空气</button>
-        <button data-tab="cmp">对比</button>
-        <button data-tab="wave">海浪</button>
+        <button data-tab="48h" class="active">${t('tab.h48')}</button>
+        <button data-tab="mg">${t('tab.mg')}</button>
+        <button data-tab="7d">${t('tab.d7')}</button>
+        <button data-tab="ag">${t('tab.ag')}</button>
+        <button data-tab="ap">${t('tab.ap')}</button>
+        <button data-tab="aq">${t('tab.aq')}</button>
+        <button data-tab="cmp">${t('tab.cmp')}</button>
+        <button data-tab="wave">${t('tab.wave')}</button>
       </div>
       <div id="ptab-body"></div>
-      <div class="psun">🌅 ${fmtHourLocal(Date.parse(d.daily.sunrise[0]))} 日出 · 🌇 ${fmtHourLocal(Date.parse(d.daily.sunset[0]))} 日落(当地)</div>
-      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">数据源:${modelLabel(d, this.dataModel)},插值到该点坐标${staleNote}</div>
+      <div class="psun">${t('panel.sun', { rise: fmtHourLocal(Date.parse(d.daily.sunrise[0])), set: fmtHourLocal(Date.parse(d.daily.sunset[0])) })}</div>
+      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">${t('panel.src', { model: modelLabel(d, this.dataModel), stale: staleNote })}</div>
     `;
 
     this.content.querySelectorAll('.ptabs button').forEach((b) => {
@@ -183,7 +175,7 @@ export class ForecastPanel {
   /* 模式对比:多模式温度/风速曲线叠绘(GFS / GEFS / ECMWF / Open-Meteo) */
   async _renderCompare(body) {
     if (this.compareData) { this._drawCompare(body, this.compareData); return; }
-    body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">并行获取多模式预报…</div>';
+    body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">' + t('panel.cmpFetching') + '</div>';
     const MODELS = [
       { id: 'gfs_raw', name: 'GFS', color: '#45c4ff' },
       { id: 'gefs_raw', name: 'GEFS', color: '#ffb454' },
@@ -203,7 +195,7 @@ export class ForecastPanel {
     const settled = await Promise.all(MODELS.map(get));
     const ok = settled.filter(Boolean);
     this.compareData = ok;
-    if (!ok.length) { body.innerHTML = '<p style="color:var(--text-dim);font-size:12.5px;padding:20px 0;text-align:center">各模式数据暂不可用,请稍后重试</p>'; return; }
+    if (!ok.length) { body.innerHTML = `<p style="color:var(--text-dim);font-size:12.5px;padding:20px 0;text-align:center">${t('panel.cmpNone')}</p>`; return; }
     this._drawCompare(body, ok);
   }
 
@@ -284,7 +276,7 @@ export class ForecastPanel {
     wrap.appendChild(cv);
     const note = document.createElement('div');
     note.style.cssText = 'font-size:10.5px;color:var(--text-faint);margin:4px 0 8px';
-    note.textContent = '温度曲线逐 3h(虚线轴 °C);曲线缺失表示该模式数据暂未就绪';
+    note.textContent = t('panel.cmpNote');
     body.innerHTML = '';
     body.appendChild(wrap);
     body.appendChild(note);
@@ -372,9 +364,9 @@ export class ForecastPanel {
     // 图例独立成 HTML 行,不与画布内时间标签争位
     const lg = document.createElement('div');
     lg.className = 'pchart-legend';
-    lg.innerHTML = '<span><i style="background:#ffb454"></i>温度</span>'
-      + '<span><i style="background:rgba(110,220,255,0.85)"></i>风速 m/s</span>'
-      + '<span><i style="background:rgba(80,150,255,0.8)"></i>降水 mm</span>';
+    lg.innerHTML = `<span><i style="background:#ffb454"></i>${t('chart.temp')}</span>`
+      + `<span><i style="background:rgba(110,220,255,0.85)"></i>${t('chart.wind', { u: unitLabel('wind') })}</span>`
+      + `<span><i style="background:rgba(80,150,255,0.8)"></i>${t('chart.precip')}</span>`;
     wrap.appendChild(lg);
     body.innerHTML = '';
     body.appendChild(wrap);
@@ -382,7 +374,7 @@ export class ForecastPanel {
 
   /* 海浪:Open-Meteo Marine(免费无 key),陆地返回空数据 */
   async _renderWave(body) {
-    body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">获取海浪预报…</div>';
+    body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">' + t('panel.waveFetching') + '</div>';
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 15000);
     let d = null;
@@ -392,10 +384,10 @@ export class ForecastPanel {
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
       ]).catch(() => null);
       clearTimeout(timer);
-      if (d && d.error) throw new Error(d.reason || '无数据');
+      if (d && d.error) throw new Error(d.reason || t('panel.noData'));
     } catch (e) { clearTimeout(timer); d = null; }
     if (!d || !d.hourly || !d.hourly.wave_height || !d.hourly.wave_height.some((v) => v != null && v > 0)) {
-      body.innerHTML = '<p style="color:var(--text-dim);font-size:12.5px;padding:16px 0;text-align:center">该位置无海浪数据(内陆或数据未覆盖)</p>';
+      body.innerHTML = `<p style="color:var(--text-dim);font-size:12.5px;padding:16px 0;text-align:center">${t('panel.waveNone')}</p>`;
       return;
     }
     const times = d.hourly.time;
@@ -439,7 +431,7 @@ export class ForecastPanel {
     ctx.font = '9.5px -apple-system, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#45c4ff';
-    ctx.fillText('波高 m · 箭头=浪向', padL, 10);
+    ctx.fillText(t('chart.waveH'), padL, 10);
     // 浪向箭头(每 8 个)
     ctx.strokeStyle = 'rgba(255,255,255,0.75)';
     for (let i = 0; i < count; i += 8) {
@@ -459,7 +451,7 @@ export class ForecastPanel {
     body.appendChild(wrap);
     const note = document.createElement('div');
     note.style.cssText = 'font-size:10.5px;color:var(--text-faint);margin-top:6px';
-    note.textContent = '数据源:Open-Meteo Marine(ECMWF WAM)· 波高 / 浪向 / 周期预报';
+    note.textContent = t('panel.waveSrc');
     body.appendChild(note);
   }
 
@@ -470,7 +462,7 @@ export class ForecastPanel {
     let start = allTimes.findIndex((t) => t >= Date.now() - 3600e3);
     if (start < 0) start = 0;
     const N = Math.min(allTimes.length - start, 56);
-    if (N < 4) { body.innerHTML = '<p style="color:var(--text-dim);font-size:12.5px;text-align:center;padding:16px 0">序列数据不足</p>'; return; }
+    if (N < 4) { body.innerHTML = `<p style="color:var(--text-dim);font-size:12.5px;text-align:center;padding:16px 0">${t('panel.seriesShort')}</p>`; return; }
     const sl = (arr) => arr.slice(start, start + N);
     const ms = sl(allTimes);
     const T = sl(d.hourly.temperature_2m);
@@ -600,11 +592,11 @@ export class ForecastPanel {
     // 图例
     ctx.textAlign = 'left';
     ctx.font = '9px -apple-system, sans-serif';
-    ctx.fillStyle = '#ffb454'; ctx.fillText('— 温度', padL, ch - padB + 2);
-    ctx.fillStyle = 'rgba(79,209,165,0.85)'; ctx.fillText('-- 露点', padL + 40, ch - padB + 2);
-    ctx.fillStyle = 'rgba(80,150,255,0.8)'; ctx.fillText('▮降水', padL + 80, ch - padB + 2);
-    ctx.fillStyle = 'rgba(195,155,255,0.75)'; ctx.fillText('—气压', padL + 116, ch - padB + 2);
-    ctx.fillStyle = 'rgba(140,200,255,0.9)'; ctx.fillText('↑风向风速 m/s', padL + 152, ch - padB + 2);
+    ctx.fillStyle = '#ffb454'; ctx.fillText(t('chart.mgTemp'), padL, ch - padB + 2);
+    ctx.fillStyle = 'rgba(79,209,165,0.85)'; ctx.fillText(t('chart.mgDew'), padL + 40, ch - padB + 2);
+    ctx.fillStyle = 'rgba(80,150,255,0.8)'; ctx.fillText(t('chart.mgPrcp'), padL + 80, ch - padB + 2);
+    ctx.fillStyle = 'rgba(195,155,255,0.75)'; ctx.fillText(t('chart.mgPres'), padL + 116, ch - padB + 2);
+    ctx.fillStyle = 'rgba(140,200,255,0.9)'; ctx.fillText(t('chart.mgWind'), padL + 152, ch - padB + 2);
 
     const wrap = document.createElement('div');
     wrap.className = 'pchart-wrap';
@@ -617,7 +609,7 @@ export class ForecastPanel {
   async _renderAirgram(body) {
     const ckey = `${this.lat.toFixed(2)},${this.lon.toFixed(2)}`;
     if (this._tabCache.airgram?.key === ckey) { this._drawAirgram(body, this._tabCache.airgram.data); return; }
-    body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">获取气压层数据…</div>';
+    body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">' + t('panel.agFetching') + '</div>';
     try {
       const data = await fetchAirgram(this.lat, this.lon);
       this._tabCache.airgram = { key: ckey, data };
@@ -719,7 +711,7 @@ export class ForecastPanel {
     // 图例
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillText('温度填色 · 白虚线=0°C · 箭头=风向风速', padL, 11);
+    ctx.fillText(t('chart.agLegend'), padL, 11);
 
     const wrap = document.createElement('div');
     wrap.className = 'pchart-wrap';
@@ -728,7 +720,7 @@ export class ForecastPanel {
     body.appendChild(wrap);
     const note = document.createElement('div');
     note.style.cssText = 'font-size:10.5px;color:var(--text-faint);margin-top:6px';
-    note.textContent = '数据源:Open-Meteo(GFS 气压层)· 1000→150 hPa 对数高度轴';
+    note.textContent = t('panel.agSrc');
     body.appendChild(note);
   }
 
@@ -736,7 +728,7 @@ export class ForecastPanel {
   async _renderAirports(body) {
     const ckey = `${this.lat.toFixed(2)},${this.lon.toFixed(2)}`;
     if (!this._tabCache.ap || this._tabCache.ap.key !== ckey) {
-      body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">检索附近机场与观测…</div>';
+      body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">' + t('ap.fetching') + '</div>';
       try {
         const [airports, obs] = await Promise.all([nearestAirports(this.lat, this.lon, 8), fetchObs()]);
         const stMap = {};
@@ -757,12 +749,12 @@ export class ForecastPanel {
       const fr = st ? flightRule(st.raw) : null;
       const frChip = fr ? `<i class="ap-chip" style="background:${FLIGHT_RULES[fr]}22;color:${FLIGHT_RULES[fr]};border-color:${FLIGHT_RULES[fr]}55">${fr}</i>` : '';
       const metar = st ? [
-        `风 ${st.wd == null ? '不定' : Math.round(st.wd) + '°'} ${st.ws == null ? '—' : (st.ws * 0.514).toFixed(1)}m/s${st.wg ? ' 阵' + (st.wg * 0.514).toFixed(0) : ''}`,
-        `能见度 ${visDisp(st.vis)}`,
+        t('ap.wind', { v: `${st.wd == null ? t('ap.vrb') : Math.round(st.wd) + '°'} ${st.ws == null ? '—' : (st.ws * 0.514).toFixed(1)}m/s` }) + (st.wg ? t('ap.gust', { v: (st.wg * 0.514).toFixed(0) }) : ''),
+        t('ap.vis', { v: visDisp(st.vis) }),
         st.t != null ? `${Math.round(toDeg(st.t))}°/${st.td != null ? Math.round(toDeg(st.td)) + '°' : '—'}` : null,
         st.p != null ? `Q${Math.round(st.p)}` : null,
         st.wx || '',
-      ].filter(Boolean).join(' · ') : '暂无该站观测';
+      ].filter(Boolean).join(' · ') : t('ap.noObs');
       const dist = a.d < 1 ? '<1' : Math.round(a.d);
       return `<div class="ap-row">
         <div class="ap-head">
@@ -775,14 +767,14 @@ export class ForecastPanel {
         ${st?.raw ? `<div class="ap-raw" hidden>${st.raw}</div>` : ''}
         ${taf[a.icao] ? `<div class="ap-taf" hidden><pre>${taf[a.icao][3]}</pre></div>` : ''}
         <div class="ap-links">
-          ${st?.raw ? '<button class="ap-x" data-x="raw">原文</button>' : ''}
-          ${taf[a.icao] ? '<button class="ap-x" data-x="taf">TAF 预报</button>' : ''}
+          ${st?.raw ? `<button class="ap-x" data-x="raw">${t('ap.raw')}</button>` : ''}
+          ${taf[a.icao] ? `<button class="ap-x" data-x="taf">${t('ap.taf')}</button>` : ''}
         </div>
       </div>`;
     }).join('');
     body.innerHTML = `<div class="ap-list">${html}</div>
       <div style="font-size:10.5px;color:var(--text-faint);margin-top:8px;text-align:center">
-      METAR/TAF:aviationweather.gov(NOAA,公有领域)${obsAge ? ` · 观测更新于 ${obsAge}` : ''}</div>`;
+      ${t('ap.src', { age: obsAge ? t('ap.updated', { t: obsAge }) : '' })}</div>`;
     body.querySelectorAll('.ap-row').forEach((row) => {
       row.querySelectorAll('.ap-x').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -797,7 +789,7 @@ export class ForecastPanel {
   async _renderAir(body) {
     const ckey = `${this.lat.toFixed(2)},${this.lon.toFixed(2)}`;
     if (!this._tabCache.aq || this._tabCache.aq.key !== ckey) {
-      body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">获取空气质量与 UV…</div>';
+      body.innerHTML = '<div class="spinner"></div><div style="text-align:center;font-size:11.5px;color:var(--text-faint)">' + t('panel.aqFetching') + '</div>';
       try {
         const d = await fetchAirQuality(this.lat, this.lon);
         this._tabCache.aq = { key: ckey, d };
@@ -823,15 +815,15 @@ export class ForecastPanel {
     const uvb = uvBand(uv);
     const stats = [
       ['PM2.5', cur('pm2_5'), 'μg/m³'], ['PM10', cur('pm10'), 'μg/m³'],
-      ['臭氧 O₃', cur('ozone'), 'μg/m³'], ['二氧化氮', cur('nitrogen_dioxide'), 'μg/m³'],
-      ['二氧化硫', cur('sulphur_dioxide'), 'μg/m³'], ['沙尘', cur('dust'), 'μg/m³'],
+      [t('air.o3'), cur('ozone'), 'μg/m³'], [t('air.no2'), cur('nitrogen_dioxide'), 'μg/m³'],
+      [t('air.so2'), cur('sulphur_dioxide'), 'μg/m³'], [t('air.dust'), cur('dust'), 'μg/m³'],
     ];
-    const pollenKeys = [['grass_pollen', '草'], ['birch_pollen', '桦树'], ['mugwort_pollen', '艾草'], ['olive_pollen', '橄榄'], ['ragweed_pollen', '豚草'], ['alder_pollen', '桤木']];
-    const pollen = pollenKeys.map(([k, zh]) => [zh, cur(k)]).filter((x) => x[1] != null);
+    const pollenKeys = [['grass_pollen', 'pollen.grass'], ['birch_pollen', 'pollen.birch'], ['mugwort_pollen', 'pollen.mugwort'], ['olive_pollen', 'pollen.olive'], ['ragweed_pollen', 'pollen.ragweed'], ['alder_pollen', 'pollen.alder']];
+    const pollen = pollenKeys.map(([k, key]) => [t(key), cur(k)]).filter((x) => x[1] != null);
 
     const statsHtml = `<div class="pgrid">
-      <div class="pstat" style="border:1px solid ${band ? band.color + '66' : 'transparent'}"><b style="color:${band ? band.color : 'inherit'}">${aqi == null ? '—' : Math.round(aqi)}</b><span>US AQI${band ? ' · ' + band.label : ''}</span></div>
-      <div class="pstat"><b style="color:${uvb ? uvb.color : 'inherit'}">${uv == null ? '—' : uv.toFixed(1)}</b><span>UV 指数${uvb ? ' · ' + uvb.label : ''}</span></div>
+      <div class="pstat" style="border:1px solid ${band ? band.color + '66' : 'transparent'}"><b style="color:${band ? band.color : 'inherit'}">${aqi == null ? '—' : Math.round(aqi)}</b><span>${t('air.aqi', { band: band ? ' · ' + band.label : '' })}</span></div>
+      <div class="pstat"><b style="color:${uvb ? uvb.color : 'inherit'}">${uv == null ? '—' : uv.toFixed(1)}</b><span>${t('air.uv', { band: uvb ? ' · ' + uvb.label : '' })}</span></div>
       ${stats.map(([zh, v, u]) => `<div class="pstat"><b>${v == null ? '—' : Math.round(v)}</b><span>${zh} ${u}</span></div>`).join('')}
     </div>`;
 
@@ -901,7 +893,7 @@ export class ForecastPanel {
     ctxU.fillStyle = 'rgba(255,255,255,0.4)'; ctxU.textAlign = 'right';
     ctxU.fillText(String(Math.round(uvMax)), padL - 3, yU(uvMax) + 3);
     ctxU.fillStyle = 'rgba(255,210,87,0.9)'; ctxU.textAlign = 'left';
-    ctxU.fillText('UV 指数(48h)', padL, 10);
+    ctxU.fillText(t('chart.uv48'), padL, 10);
 
     body.innerHTML = '';
     body.insertAdjacentHTML('beforeend', statsHtml);
@@ -915,11 +907,11 @@ export class ForecastPanel {
     body.appendChild(wU);
     if (pollen.length) {
       body.insertAdjacentHTML('beforeend', `<div class="pgrid" style="margin-top:8px">${pollen.map(([zh, v]) =>
-        `<div class="pstat"><b>${v.toFixed(0)}</b><span>${zh}花粉 粒/m³</span></div>`).join('')}</div>`);
+        `<div class="pstat"><b>${v.toFixed(0)}</b><span>${t('air.pollen', { name: zh })}</span></div>`).join('')}</div>`);
     }
     const note = document.createElement('div');
     note.style.cssText = 'font-size:10.5px;color:var(--text-faint);margin:8px 0 4px;text-align:center';
-    note.textContent = '数据源:Open-Meteo Air Quality(CAMS 全球)· 灰柱=PM2.5 相对量';
+    note.textContent = t('air.src');
     body.appendChild(note);
   }
 
@@ -933,7 +925,7 @@ export class ForecastPanel {
       const [desc, icon] = wmo(d.weather_code[i]);
       const l = (100 * (toDeg(d.temperature_2m_min[i]) - gMin) / span).toFixed(1);
       const w = (100 * (toDeg(d.temperature_2m_max[i]) - toDeg(d.temperature_2m_min[i])) / span).toFixed(1);
-      const name = i === 0 ? '今天' : i === 1 ? '明天' : weekday(t);
+      const name = i === 0 ? t('day.today') : i === 1 ? t('day.tomorrow') : weekday(t);
       const pp = d.precipitation_probability_max?.[i];
       const ppHtml = pp == null ? '<span class="d-pp" style="color:var(--text-dim)">—</span>' : `<span class="d-pp">💧${pp}%</span>`;
       return `<div class="pday">
@@ -945,19 +937,19 @@ export class ForecastPanel {
       </div>`;
     });
     body.innerHTML = `<div class="pdays">${rows.join('')}</div>
-      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px">日期为当地时间;💧 为降水概率峰值(GFS 自建管道无此项,显示 —)。</div>`;
+      <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px">${t('panel.daysNote')}</div>`;
   }
 }
 
 function compass(deg) {
-  const dirs = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
-  return dirs[Math.round(((deg % 360) / 45)) % 8] + '风';
+  const dir = ta('dir8')[Math.round(((deg % 360) / 45)) % 8] || '';
+  return t('windFmt', { dir });
 }
 function modelLabel(d, pointModel) {
   // 点位数据固定来自大气模式(专用模式已回落),按实际请求参数展示;
   // 对比标签页等未传 pointModel 的调用沿用当前模式标注
-  if (pointModel && POINT_MODEL_LABELS[pointModel]) return POINT_MODEL_LABELS[pointModel];
-  return window.__currentModelLabel || 'Open-Meteo 模式数据';
+  if (pointModel && has('panelModel.' + pointModel)) return t('panelModel.' + pointModel);
+  return window.__currentModelLabel || t('panel.modelFallback');
 }
 
 /* ---------- 气象图:露点(Magnus) ---------- */
@@ -1009,9 +1001,11 @@ function flightRule(raw) {
 
 /* ---------- 空气:AQI/UV 分级带(图表背景) ---------- */
 const AQI_BANDS_LABELLED = [
-  { lo: 0, hi: 50, zh: '优', color: '#7ddc9a' }, { lo: 50, hi: 100, zh: '良', color: '#ffd257' },
-  { lo: 100, hi: 150, zh: '轻度', color: '#ff9f43' }, { lo: 150, hi: 200, zh: '中度', color: '#ff6b5e' },
-  { lo: 200, hi: 300, zh: '重度', color: '#c39bff' },
+  { lo: 0, hi: 50, get zh() { return ta('aqiBand')[0]; }, color: '#7ddc9a' },
+  { lo: 50, hi: 100, get zh() { return ta('aqiBand')[1]; }, color: '#ffd257' },
+  { lo: 100, hi: 150, get zh() { return ta('aqiBand')[2]; }, color: '#ff9f43' },
+  { lo: 150, hi: 200, get zh() { return ta('aqiBand')[3]; }, color: '#ff6b5e' },
+  { lo: 200, hi: 300, get zh() { return ta('aqiBand')[4]; }, color: '#c39bff' },
 ];
 const UV_BANDS_LABELLED = [
   { lo: 0, hi: 3, color: '#7ddc9a' }, { lo: 3, hi: 6, color: '#ffd257' },

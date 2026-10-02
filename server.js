@@ -572,11 +572,13 @@ const server = http.createServer(async (req, res) => {
         if (fixed && !fixed.includes('\uFFFD')) name = fixed;
       }
       if (!name) return sendJSON(res, 200, { results: [] });
-      const key = `geo:${name}`;
+      // 地名结果跟随界面语言(Open-Meteo 支持 zh/zh-tw/ja/ko/de/fr/es/pt/ru…),缓存键按语言隔离
+      const glang = (u.searchParams.get('language') || 'zh').replace(/[^a-z-]/gi, '').slice(0, 8) || 'zh';
+      const key = `geo:${glang}:${name}`;
       const cached = memGet(key);
       if (cached) return sendJSON(res, 200, cached, 86400);
-      const params = new URLSearchParams({ name, count: '8', language: 'zh', format: 'json' });
-      const diskKey = crypto.createHash('sha1').update(`geo|${name}`).digest('hex');
+      const params = new URLSearchParams({ name, count: '8', language: glang, format: 'json' });
+      const diskKey = crypto.createHash('sha1').update(`geo|${glang}|${name}`).digest('hex');
       const diskPath = path.join(CACHE_DIR, `s_${diskKey}.json`);
       try {
         const data = await fetchJSON(`${GEO_API}?${params}`, 1);

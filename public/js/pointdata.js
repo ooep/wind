@@ -5,13 +5,14 @@
  *  - 海拔批量查询(测距工具用)
  */
 import { resolveMode, isStatic, staticBase } from './api.js';
+import { t, ta } from './i18n.js';
 
 /* ---------------- 机场库(OurAirports 精简,5718 个) ---------------- */
 let airportsPromise = null;
 function loadAirports() {
   if (!airportsPromise) {
     airportsPromise = fetch(new URL('../data/airports.json', import.meta.url))
-      .then((r) => { if (!r.ok) throw new Error(`机场库加载失败(${r.status})`); return r.json(); });
+      .then((r) => { if (!r.ok) throw new Error(t('err.airports', { status: r.status })); return r.json(); });
   }
   return airportsPromise;
 }
@@ -44,11 +45,11 @@ export async function fetchObs() {
   await resolveMode();
   if (isStatic()) {
     const r = await fetch(`${staticBase()}/obs/latest.json`);
-    if (!r.ok) throw new Error(`观测数据未就绪(${r.status}),首次部署后约 1 小时内可用`);
+    if (!r.ok) throw new Error(t('err.obsNotReady', { status: r.status }));
     return r.json();
   }
   const r = await fetch('/api/obs');
-  if (!r.ok) throw new Error('观测数据加载失败');
+  if (!r.ok) throw new Error(t('err.obsLoad'));
   return r.json();
 }
 
@@ -85,9 +86,9 @@ export async function fetchAirgram(lat, lon) {
     hourly: hourly.join(','), forecast_days: '3', timezone: 'GMT',
   });
   const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
-  if (!res.ok) throw new Error('高空剖面数据加载失败');
+  if (!res.ok) throw new Error(t('err.agLoad'));
   const d = await res.json();
-  if (!d.hourly) throw new Error('高空剖面数据为空');
+  if (!d.hourly) throw new Error(t('err.agEmpty'));
   return { levels: AIRGRAM_LEVELS, levelAlt: LEVEL_ALT_M, h: d.hourly, tzOffset: d.utc_offset_seconds || 0 };
 }
 
@@ -108,24 +109,29 @@ export async function fetchAirQuality(lat, lon) {
     d = await r.json();
   } catch {
     const r = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${base(AQ_HOURLY)}`);
-    if (!r.ok) throw new Error('空气质量数据加载失败');
+    if (!r.ok) throw new Error(t('err.aqLoad'));
     d = await r.json();
   }
-  if (!d.hourly) throw new Error('空气质量数据为空');
+  if (!d.hourly) throw new Error(t('err.aqEmpty'));
   return d;
 }
 
 /* US AQI 分级(着色用) */
 export const AQI_BANDS = [
-  { max: 50, label: '优', color: '#7ddc9a' }, { max: 100, label: '良', color: '#ffd257' },
-  { max: 150, label: '轻度污染', color: '#ff9f43' }, { max: 200, label: '中度污染', color: '#ff6b5e' },
-  { max: 300, label: '重度污染', color: '#c39bff' }, { max: 1e9, label: '严重污染', color: '#b3536b' },
+  { max: 50, get label() { return ta('aqiBand')[0]; }, color: '#7ddc9a' },
+  { max: 100, get label() { return ta('aqiBand')[1]; }, color: '#ffd257' },
+  { max: 150, get label() { return ta('aqiBand')[2]; }, color: '#ff9f43' },
+  { max: 200, get label() { return ta('aqiBand')[3]; }, color: '#ff6b5e' },
+  { max: 300, get label() { return ta('aqiBand')[4]; }, color: '#c39bff' },
+  { max: 1e9, get label() { return ta('aqiBand')[5]; }, color: '#b3536b' },
 ];
 export const aqiBand = (v) => (v == null ? null : AQI_BANDS.find((b) => v <= b.max));
 export const UV_BANDS = [
-  { max: 3, label: '低', color: '#7ddc9a' }, { max: 6, label: '中', color: '#ffd257' },
-  { max: 8, label: '高', color: '#ff9f43' }, { max: 11, label: '很高', color: '#ff6b5e' },
-  { max: 1e9, label: '极高', color: '#c39bff' },
+  { max: 3, get label() { return ta('uvBand')[0]; }, color: '#7ddc9a' },
+  { max: 6, get label() { return ta('uvBand')[1]; }, color: '#ffd257' },
+  { max: 8, get label() { return ta('uvBand')[2]; }, color: '#ff9f43' },
+  { max: 11, get label() { return ta('uvBand')[3]; }, color: '#ff6b5e' },
+  { max: 1e9, get label() { return ta('uvBand')[4]; }, color: '#c39bff' },
 ];
 export const uvBand = (v) => (v == null ? null : UV_BANDS.find((b) => v <= b.max));
 
@@ -133,7 +139,7 @@ export const uvBand = (v) => (v == null ? null : UV_BANDS.find((b) => v <= b.max
 export async function fetchElevations(lats, lons) {
   const params = new URLSearchParams({ latitude: lats.join(','), longitude: lons.join(',') });
   const r = await fetch(`https://api.open-meteo.com/v1/elevation?${params}`);
-  if (!r.ok) throw new Error('海拔查询失败');
+  if (!r.ok) throw new Error(t('err.elev'));
   const d = await r.json();
   return d.elevation || [];
 }

@@ -4,6 +4,7 @@
  * 渲染采用 #overlay-root 上的自绘 canvas(Leaflet 矢量层会被气象填色画布遮挡),
  * 点击风暴中心弹出自定义详情卡。 */
 import { resolveMode, isStatic, staticBase } from '../api.js';
+import { t, ta, has } from '../i18n.js';
 
 const JMA = 'https://www.jma.go.jp/bosai/typhoon/data';
 
@@ -20,7 +21,8 @@ function tierOf(cat, kt) {
   return 'td';
 }
 const TIER_COLOR = { td: '#7fd0ff', ts: '#4cd9a8', ty: '#ffab4a', major: '#ff5f6e' };
-const TIER_LABEL = { td: '热带低压', ts: '热带风暴', ty: '台风/飓风', major: '强台风/强飓风' };
+/* 强度分级按界面语言取词 */
+const TIER_LABEL = new Proxy({}, { get: (_, k) => (has('trop.' + String(k)) ? t('trop.' + String(k)) : k) });
 
 export class TropicalLayer {
   constructor(map) {
@@ -255,21 +257,21 @@ export class TropicalLayer {
     const ms = kt != null ? Math.round(kt * 0.5144) : null;
     const mv = st.movement
       ? (typeof st.movement === 'string' ? st.movement
-        : `${st.movement.dirDeg != null ? DIR8(Math.round(st.movement.dirDeg / 45) % 8) + '方向' : ''} ${st.movement.speedKt != null ? st.movement.speedKt + ' kt' : ''}`.trim() || '—')
+        : `${st.movement.dirDeg != null ? t('trop.dir', { dir: DIR8(Math.round(st.movement.dirDeg / 45) % 8) }) : ''} ${st.movement.speedKt != null ? st.movement.speedKt + ' kt' : ''}`.trim() || '—')
       : '—';
     return `<div class="tc-popup">
-      <b>${escapeHtml(st.name || '热带气旋')}${st.nameLocal ? ` <span style="opacity:.65">${escapeHtml(st.nameLocal)}</span>` : ''}</b>
-      <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${TIER_LABEL[tier]}${st.number ? ` · ${escapeHtml(st.number)}` : ''} · ${st.source === 'jma' ? '日本气象厅' : 'NOAA NHC'}</div>
+      <b>${escapeHtml(st.name || t('trop.default'))}${st.nameLocal ? ` <span style="opacity:.65">${escapeHtml(st.nameLocal)}</span>` : ''}</b>
+      <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${TIER_LABEL[tier]}${st.number ? ` · ${escapeHtml(st.number)}` : ''} · ${st.source === 'jma' ? t('trop.jma') : t('trop.nhc')}</div>
       <div class="tc-grid">
-        <span>最大风速</span><b>${kt != null ? `${kt} kt${ms != null ? ' / ' + ms + ' m/s' : ''}` : '—'}</b>
-        <span>中心气压</span><b>${st.pressureHpa != null ? st.pressureHpa + ' hPa' : '—'}</b>
-        <span>移向移速</span><b>${escapeHtml(mv)}</b>
-        <span>发布时间</span><b>${st.issue ? fmtUTC(st.issue) : '—'}</b>
+        <span>${t('trop.maxWind')}</span><b>${kt != null ? `${kt} kt${ms != null ? ' / ' + ms + ' m/s' : ''}` : '—'}</b>
+        <span>${t('trop.pressure')}</span><b>${st.pressureHpa != null ? st.pressureHpa + ' hPa' : '—'}</b>
+        <span>${t('trop.movement')}</span><b>${escapeHtml(mv)}</b>
+        <span>${t('trop.issue')}</span><b>${st.issue ? fmtUTC(st.issue) : '—'}</b>
       </div></div>`;
   }
 }
 
-function DIR8(i) { return ['东', '东南', '南', '西南', '西', '西北', '北', '东北'][i] || ''; }
+function DIR8(i) { return ta('dir8E')[i] || ''; }
 function fmtUTC(iso) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? String(iso) : `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} UTC`;
@@ -317,7 +319,7 @@ function buildJma(tc, spec, fc) {
   return {
     source: 'jma',
     id: tc.tropicalCyclone,
-    number: title && title.typhoonNumber ? `第${String(title.typhoonNumber).slice(2)}号` : null,
+    number: title && title.typhoonNumber ? t('trop.number', { n: String(title.typhoonNumber).slice(2) }) : null,
     name: title && title.name ? title.name.en : null,
     nameLocal: title && title.name ? title.name.jp : null,
     category: (title && title.category && title.category.en) || tc.category || null,

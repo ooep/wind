@@ -2,6 +2,7 @@
  * 数据与点位面板共享(localStorage 'fy_favs'),面板里点 ☆ 收藏/取消会派发 favs-changed,这里实时刷新。
  */
 import { ForecastPanel } from './panel.js';
+import { t } from './i18n.js';
 
 export class FavoritesUI {
   constructor({ go }) {
@@ -26,13 +27,13 @@ export class FavoritesUI {
   render() {
     const favs = ForecastPanel.favs();
     if (!favs.length) {
-      this.list.innerHTML = '<div class="fav-empty">暂无收藏<br><span>点击地图任意位置,在面板右上角点 ☆ 收藏该地点</span></div>';
+      this.list.innerHTML = `<div class="fav-empty">${t('favs.empty')}<br><span>${t('favs.emptyHint')}</span></div>`;
       return;
     }
     this.list.innerHTML = favs.map((f, i) => `
       <div class="fav-item" data-i="${i}">
         <div class="fav-main"><b>★ ${f.name}</b><span>${f.lat.toFixed(2)}°, ${f.lon.toFixed(2)}°</span></div>
-        <button class="fav-del" data-i="${i}" title="删除收藏">✕</button>
+        <button class="fav-del" data-i="${i}" title="${t('favs.del')}">✕</button>
       </div>`).join('');
     this.list.querySelectorAll('.fav-item').forEach((el) => {
       el.addEventListener('click', (e) => {

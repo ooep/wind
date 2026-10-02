@@ -4,20 +4,18 @@
 import { resolveMode, isStatic, staticBase } from '../api.js';
 import { AQI } from '../colormaps.js';
 import { fmtHourLocal } from '../util.js';
+import { t, ta } from '../i18n.js';
 
-/* 通风等级说明 */
-const AQI_DESC = [
-  [50, '优', '空气令人满意,基本无健康风险'],
-  [100, '良', '极少数敏感人群应减少户外活动'],
-  [150, '轻度污染', '敏感人群症状可能轻度加剧'],
-  [200, '中度污染', '普遍建议减少长时间户外活动'],
-  [300, '重度污染', '健康人群普遍出现症状'],
-  [500, '严重污染', '所有人应避免户外活动'],
-];
+/* 通风等级说明(分级名与提示按界面语言取词) */
+const AQI_MAX = [50, 100, 150, 200, 300, 500];
 
 function aqiDesc(v) {
-  for (const [max, grade, tip] of AQI_DESC) if (v <= max) return { grade, tip };
-  return AQI_DESC[AQI_DESC.length - 1];
+  const grades = ta('aqiBand');
+  const tips = t('aqi.tipA').split('|');
+  for (let i = 0; i < AQI_MAX.length; i++) {
+    if (v <= AQI_MAX[i]) return { grade: grades[i] || '', tip: tips[i] || '' };
+  }
+  return { grade: grades[grades.length - 1] || '', tip: tips[tips.length - 1] || '' };
 }
 
 export class AqiLayer {
@@ -99,12 +97,12 @@ export class AqiLayer {
     const d = aqiDesc(a);
     const pick = (arr) => (arr ? arr[nowH] : null);
     const f = (v, unit, rd = 1) => (Number.isFinite(v) ? `${(+v).toFixed(rd)}${unit}` : '—');
-    const FIELDS = { a: ['US AQI', ''], p: ['PM2.5', ' μg/m³'], p10: ['PM10', ' μg/m³'], o3: ['O₃', ' μg/m³'], no2: ['NO₂', ' μg/m³'], so2: ['SO₂', ' μg/m³'], u: ['UV 指数', ''] };
+    const FIELDS = { a: ['US AQI', ''], p: ['PM2.5', ' μg/m³'], p10: ['PM10', ' μg/m³'], o3: ['O₃', ' μg/m³'], no2: ['NO₂', ' μg/m³'], so2: ['SO₂', ' μg/m³'], u: [t('layer.uv'), ''] };
     const [flabel, funit] = FIELDS[this.field] || FIELDS.a;
     const gen = this.data && this.data.generated ? new Date(this.data.generated * 1000) : null;
     return `<div class="tc-popup">
       <b>${escapeHtml(c.n || '')}</b>
-      <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${gen ? `CAMS 预报 · ${gen.getHours()}:00 更新` : 'CAMS 预报'}</div>
+      <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${gen ? t('aqi.gen', { h: gen.getHours() }) : t('aqi.genShort')}</div>
       <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 6px">
         <span style="font-size:26px;font-weight:700;color:${rgbaOf(this.cmap.color(a))}">${f(a, funit, this.field === 'a' ? 0 : 1)}</span>
         <span style="font-size:12.5px;font-weight:600">${flabel}${this.field === 'a' ? ' · ' + d.grade : ''}</span>
@@ -116,9 +114,9 @@ export class AqiLayer {
         <span>O₃</span><b>${f(pick(c.o3), ' μg/m³')}</b>
         <span>NO₂</span><b>${f(pick(c.no2), ' μg/m³')}</b>
         <span>SO₂</span><b>${f(pick(c.so2), ' μg/m³')}</b>
-        <span>UV 指数</span><b>${f(pick(c.u), '', 1)}</b>
+        <span>${t('layer.uv')}</span><b>${f(pick(c.u), '', 1)}</b>
       </div>
-      <div style="margin-top:6px;font-size:11px;opacity:.7;line-height:1.5">${this.field === 'a' ? d.tip : '浓度基于 CAMS 全球模式,城市代表值'}</div>
+      <div style="margin-top:6px;font-size:11px;opacity:.7;line-height:1.5">${this.field === 'a' ? d.tip : t('aqi.tipB')}</div>
     </div>`;
   }
 }

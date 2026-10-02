@@ -3,6 +3,7 @@
  * 每个顶点异步查海拔(Open-Meteo Elevation)。不干扰图层面板(主控在 measure.active 时不弹面板)。
  */
 import { fetchElevations } from './pointdata.js';
+import { t } from './i18n.js';
 
 const R_EARTH = 6371;
 const rad = Math.PI / 180;
@@ -63,9 +64,9 @@ export class MeasureTool {
     document.getElementById('measure-btn').classList.add('active');
     document.getElementById('map').classList.add('measuring');
     this.bar.hidden = false;
-    this.info.textContent = '点击地图加点 · 双击或「完成」闭合量面积 · Esc 退出';
+    this.info.textContent = t('me.click');
     this.group.clearLayers();
-    this.toast('测量模式已开启:点击地图开始量算');
+    this.toast(t('me.start'));
   }
 
   stop() {
@@ -79,7 +80,7 @@ export class MeasureTool {
   }
 
   finish() {
-    if (this.points.length < 2) { this.toast('至少需要 2 个点'); return; }
+    if (this.points.length < 2) { this.toast(t('me.need2')); return; }
     this.finished = true;
     this._redraw();
   }
@@ -111,16 +112,16 @@ export class MeasureTool {
     if (pts.length >= 2) {
       const total = this._totalKm();
       const seg = haversineKm(this.points[this.points.length - 2], this.points[this.points.length - 1]);
-      let txt = `本段 ${fmtKm(seg)} · 总计 ${fmtKm(total)} / ${(total / 1.852).toFixed(1)} nm`;
+      let txt = t('me.seg', { seg: fmtKm(seg), total: fmtKm(total), nm: (total / 1.852).toFixed(1) });
       if (closed) {
         const a = ringAreaKm2(this.points);
-        txt = `周长 ${fmtKm(total)} / ${(total / 1.852).toFixed(1)} nm · 面积 ${a < 1 ? `${Math.round(a * 1e6)} m²` : a < 1e4 ? `${a.toFixed(1)} km²` : `${Math.round(a).toLocaleString()} km²`}`;
+        txt = t('me.polygon', { total: fmtKm(total), nm: (total / 1.852).toFixed(1), area: a < 1 ? `${Math.round(a * 1e6)} m²` : a < 1e4 ? `${a.toFixed(1)} km²` : `${Math.round(a).toLocaleString()} km²` });
       }
       g.addLayer(L.tooltip({ permanent: true, direction: 'top', offset: [0, -16], className: 'measure-total', interactive: false })
         .setLatLng(pts[pts.length - 1]).setContent(txt));
-      this.info.textContent = txt + (this.finished ? '' : ' · 继续点击加点');
+      this.info.textContent = txt + (this.finished ? '' : t('me.more'));
     } else {
-      this.info.textContent = '点击地图加点 · 双击或「完成」闭合量面积 · Esc 退出';
+      this.info.textContent = t('me.click');
     }
   }
 

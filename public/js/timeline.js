@@ -1,6 +1,7 @@
 /* 时间轴:统一时间源,驱动填色层 / 粒子 / 等压线 / 雷达
  * Windy 式:日期表头 + 周末高亮 + 拖动双时区气泡 + 播放速度 + 数据窗分段着色 + 回当前浮钮 */
-import { clamp, WEEKDAYS } from './util.js';
+import { clamp, weekdayNames } from './util.js';
+import { t } from './i18n.js';
 import { units, tzParts, fmtClock, fmtDateParts } from './units.js';
 
 const PLAY_SPEED = 2.6 * 3600e3; // 1× 播放速度:每秒前进 2.6 小时
@@ -197,7 +198,7 @@ export class Timeline {
         const lb = document.createElement('div');
         lb.className = 'tl-day-label' + (P.wd === 0 || P.wd === 6 ? ' wk' : '');
         lb.style.left = place(t);
-        lb.textContent = `${P.m + 1}/${P.d} ${WEEKDAYS[P.wd]}`;
+        lb.textContent = `${P.m + 1}/${P.d} ${weekdayNames()[P.wd]}`;
         frag.appendChild(lb);
       }
     };
@@ -257,7 +258,7 @@ export class Timeline {
     const localT = units.timefmt === '12h'
       ? `${d.getHours() % 12 || 12}:${p2(d.getMinutes())} ${d.getHours() < 12 ? 'AM' : 'PM'}`
       : `${p2(d.getHours())}:${p2(d.getMinutes())}`;
-    this.bubA.textContent = `本地 ${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${localT}`;
+    this.bubA.textContent = `${t('tl.local')} ${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${localT}`;
     this.bubB.textContent = `UTC ${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
     this.bubble.hidden = false;
     clearTimeout(this._bubT);
@@ -273,12 +274,12 @@ export class Timeline {
     this.timeMain.textContent = `${fmtDateParts(this.pos)} ${fmtClock(this.pos)}`;
     const diffH = Math.round((this.pos - Date.now()) / 3600e3);
     let sub;
-    if (Math.abs(diffH) <= 0) sub = '当前';
-    else if (diffH < 0) sub = `过去 ${-diffH} 小时`;
-    else sub = `预报 +${diffH} 小时`;
+    if (Math.abs(diffH) <= 0) sub = t('tl.now');
+    else if (diffH < 0) sub = t('tl.past', { n: -diffH });
+    else sub = t('tl.fcst', { n: diffH });
     if (units.tz === 'utc') sub += ' · UTC';
     const radarActive = document.body.dataset.radarActive === '1';
-    if (radarActive && diffH > 0.5) sub += ' · 雷达外推';
+    if (radarActive && diffH > 0.5) sub += ' · ' + t('tl.radarExtrap');
     this.timeSub.textContent = sub;
     this._refreshNowMarker();
     this._renderDataWindow();

@@ -9,6 +9,7 @@
  *  3. 都不存在 → 服务端模式
  */
 import { Grid, b64ToF32 } from './util.js';
+import { t, omLang } from './i18n.js';
 
 let STATIC_BASE = '';
 let staticMode = false;
@@ -87,7 +88,7 @@ async function staticMetaGet(model) {
   if (staticMetas.has(model)) return staticMetas.get(model);
   const index = await staticIndexGet();
   const entry = index.models && index.models[model];
-  if (!entry) throw new Error(`静态数据未包含模式 ${model}`);
+  if (!entry) throw new Error(t('err.modelMissing', { model }));
   const meta = await fetch(`${STATIC_BASE}/${model}/${entry.runKey}/meta.json`)
     .then((r) => { if (!r.ok) throw new Error(`meta ${r.status}`); return r.json(); });
   staticMetas.set(model, meta);
@@ -97,7 +98,7 @@ async function staticMetaGet(model) {
 /* 拉取一个变量文件 → Float32Array(per-var 格式) */
 async function fetchVarF32(model, runKey, vk, cfg) {
   const r = await fetch(`${STATIC_BASE}/${model}/${runKey}/${cfg.file}`);
-  if (!r.ok) throw new Error(`变量 ${vk} 数据尚未生成(${r.status}),等待下一轮数据管道`);
+  if (!r.ok) throw new Error(t('err.varMissing', { vk, status: r.status }));
   const pack = await r.json();
   return f32FromI16B64(pack.data, pack.scale);
 }
@@ -138,7 +139,7 @@ async function staticModelGrid(model, needs, level = 0) {
   }
   const index = await staticIndexGet();
   const entry = index.models[model];
-  if (!entry) throw new Error(`静态数据未包含模式 ${model}`);
+  if (!entry) throw new Error(t('err.modelMissing', { model }));
   let gridObj = null;
   // 首选 per-var 格式;meta 未就绪(无 grid 字段)或缺文件时回退旧 global 全量包
   try {
@@ -168,12 +169,12 @@ async function staticModelGrid(model, needs, level = 0) {
 
 /* 旧格式 global-2.5.json(全变量一体,int16 编码)→ 与 /api/grid 同构的 Grid */
 async function staticGlobalGrid(model, entry) {
-  if (!entry.global) throw new Error(`模式 ${model} 的静态数据尚未生成`);
+  if (!entry.global) throw new Error(t('err.noGlobal', { model }));
   const r = await fetch(`${STATIC_BASE}/${model}/${entry.runKey}/${entry.global}`);
-  if (!r.ok) throw new Error(`全局数据包加载失败(${r.status})`);
+  if (!r.ok) throw new Error(t('err.globalHttp', { status: r.status }));
   const pack = await r.json();
   const grid = pack.grid;
-  if (!grid || !grid.ni) throw new Error('全局数据包缺少网格定义');
+  if (!grid || !grid.ni) throw new Error(t('err.globalNoGrid'));
   const shape = {
     model, source: `静态数据包(${model})`,
     step: grid.dlon, wrapLon: true,
@@ -357,7 +358,7 @@ export async function fetchGrid(params) {
   });
   const res = await fetch(`/api/grid?${qs}`);
   const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.message || `格点加载失败 (${res.status})`);
+  if (!res.ok || data.error) throw new Error(data.message || t('err.gridHttp', { status: res.status }));
   const grid = new GridCtor(data);
   gridCache.set(key, grid);
   if (gridCache.size > GRID_CACHE_MAX) {
@@ -373,7 +374,7 @@ export async function fetchPoint(lat, lon, model) {
   const qs = new URLSearchParams({ lat, lon, model });
   const res = await fetch(`/api/point?${qs}`);
   const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.message || `预报加载失败 (${res.status})`);
+  if (!res.ok || data.error) throw new Error(data.message || t('err.pointHttp', { status: res.status }));
   return data;
 }
 
@@ -399,26 +400,26 @@ export async function fetchMarine(lat, lon) {
       timezone: 'auto', forecast_days: '7',
     });
     const res = await fetch(`https://marine-api.open-meteo.com/v1/marine?${params}`);
-    if (!res.ok) throw new Error('海浪数据加载失败');
+    if (!res.ok) throw new Error(t('err.marine'));
     return res.json();
   }
   const res = await fetch(`/api/marine?lat=${lat}&lon=${lon}`);
-  if (!res.ok) throw new Error('海浪数据加载失败');
+  if (!res.ok) throw new Error(t('err.marine'));
   return res.json();
 }
 
 export async function fetchGeocode(name) {
   await resolveMode();
   if (staticMode) {
-    const qs = new URLSearchParams({ name, count: '8', language: 'zh' });
+    const qs = new URLSearchParams({ name, count: '8', language: omLang() });
     const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${qs}`);
-    if (!res.ok) throw new Error('地名检索失败');
+    if (!res.ok) throw new Error(t('err.geocode'));
     return (await res.json()).results || [];
   }
-  const qs = new URLSearchParams({ name });
+  const qs = new URLSearchParams({ name, language: omLang() });
   const res = await fetch(`/api/geocode?${qs}`);
   const data = await res.json();
-  if (!res.ok || data.error) throw new Error('地名检索失败');
+  if (!res.ok || data.error) throw new Error(t('err.geocode'));
   return data.results || [];
 }
 
@@ -426,11 +427,11 @@ export async function fetchRadarMeta() {
   await resolveMode();
   if (staticMode) {
     const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    if (!res.ok) throw new Error('雷达数据加载失败');
+    if (!res.ok) throw new Error(t('err.radar'));
     return res.json();
   }
   const res = await fetch('/api/radar');
   const data = await res.json();
-  if (!res.ok || data.error) throw new Error('雷达数据加载失败');
+  if (!res.ok || data.error) throw new Error(t('err.radar'));
   return data;
 }

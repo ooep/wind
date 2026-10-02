@@ -2,26 +2,22 @@
  * 自绘 canvas 按温度着色(Leaflet 矢量层会被气象填色画布遮挡),点击站点弹详情卡。 */
 import { resolveMode, isStatic, staticBase } from '../api.js';
 import { TEMP } from '../colormaps.js';
+import { t, ta, has } from '../i18n.js';
 
-const WX_ZH = {
-  TS: '雷暴', RA: '雨', SN: '雪', DZ: '毛毛雨', SH: '阵雨', GR: '冰雹', FZ: '冻雨',
-  FG: '雾', BR: '轻雾', HZ: '霾', FU: '烟', DU: '浮尘', SS: '沙暴', DS: '尘暴',
-  BLDU: '扬沙', BLSN: '吹雪', VCSH: '附近阵雨', TSRA: '雷雨', RASN: '雨夹雪', UP: '未知降水',
-};
-
+/* 天气现象缩写按界面语言取词(词典缺键回落原缩写) */
 function wxToZh(wx) {
   if (!wx) return '';
   const out = [];
   for (const p of String(wx).split(/\s+/).filter(Boolean)) {
     const stripped = p.replace(/^(VC|-|\+)$/g, '');
-    const zh = WX_ZH[stripped] || WX_ZH[p];
-    if (zh) out.push((p.startsWith('+') ? '大' : p.startsWith('-') ? '小' : '') + zh);
+    const name = has('wx.' + stripped) ? t('wx.' + stripped) : has('wx.' + p) ? t('wx.' + p) : null;
+    if (name) out.push((p.startsWith('+') ? t('wx.strong') : p.startsWith('-') ? t('wx.weak') : '') + name);
     else out.push(p);
   }
   return out.join(' · ');
 }
 
-const DIR8 = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+const DIR8 = () => ta('dir8');
 
 export class StationLayer {
   constructor(map) {
@@ -157,20 +153,20 @@ export class StationLayer {
     const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
     const dirText = () => {
       if (!Number.isFinite(s.ws)) return '—';
-      const d = Number.isFinite(s.wd) ? `${DIR8[Math.round(((s.wd + 360) % 360) / 45) % 8]}风` : '';
-      const g = Number.isFinite(s.wg) ? ` 阵风${Math.round(s.wg * 0.5144)}m/s` : '';
+      const d = Number.isFinite(s.wd) ? t('windFmt', { dir: DIR8()[Math.round(((s.wd + 360) % 360) / 45) % 8] || '' }) : '';
+      const g = Number.isFinite(s.wg) ? t('st.gust', { v: Math.round(s.wg * 0.5144) }) : '';
       return `${d} ${Math.round(s.ws * 0.5144)} m/s${g}`.trim();
     };
     return `<div class="tc-popup">
       <b>${esc(s.n || s.i)}</b>
-      <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${esc(s.i)} · METAR 实测${ageH != null ? ` · ${ageH < 1 ? '刚刚' : Math.round(ageH) + ' 小时前'}` : ''}</div>
+      <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${esc(s.i)} · ${t('st.metar')}${ageH != null ? ` · ${ageH < 1 ? t('st.justNow') : t('st.hoursAgo', { n: Math.round(ageH) })}` : ''}</div>
       <div class="tc-grid">
-        <span>气温</span><b>${Number.isFinite(s.t) ? Math.round(s.t) + '°C' : '—'}</b>
-        <span>露点</span><b>${Number.isFinite(s.td) ? Math.round(s.td) + '°C' : '—'}</b>
-        <span>风</span><b>${dirText()}</b>
-        <span>海平面气压</span><b>${Number.isFinite(s.p) ? Math.round(s.p) + ' hPa' : '—'}</b>
-        <span>能见度</span><b>${s.vis != null ? esc(s.vis) + ' km' : '—'}</b>
-        <span>天气</span><b>${zh ? esc(zh) : '—'}</b>
+        <span>${t('st.temp')}</span><b>${Number.isFinite(s.t) ? Math.round(s.t) + '°C' : '—'}</b>
+        <span>${t('st.dew')}</span><b>${Number.isFinite(s.td) ? Math.round(s.td) + '°C' : '—'}</b>
+        <span>${t('st.wind')}</span><b>${dirText()}</b>
+        <span>${t('st.msl')}</span><b>${Number.isFinite(s.p) ? Math.round(s.p) + ' hPa' : '—'}</b>
+        <span>${t('st.vis')}</span><b>${s.vis != null ? esc(s.vis) + ' km' : '—'}</b>
+        <span>${t('st.wx')}</span><b>${zh ? esc(zh) : '—'}</b>
       </div>
       ${s.raw ? `<div style="margin-top:6px;font-size:10px;opacity:.55;font-family:monospace;word-break:break-all">${esc(s.raw)}</div>` : ''}
     </div>`;

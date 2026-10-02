@@ -1,4 +1,5 @@
-/* 城市搜索:Open-Meteo Geocoding,中文联想 */
+/* 城市搜索:Open-Meteo Geocoding,结果跟随界面语言 */
+import { t } from './i18n.js';
 
 export class Search {
   constructor({ onSelect }) {
@@ -41,7 +42,7 @@ export class Search {
       this.results = results;
       this.sel = results.length ? 0 : -1;
       if (!results.length) {
-        this.box.innerHTML = '<div class="sr-empty">未找到匹配地点</div>';
+        this.box.innerHTML = `<div class="sr-empty">${t('search.none')}</div>`;
         this.box.hidden = false;
         return;
       }
@@ -57,7 +58,7 @@ export class Search {
     if (favs.length) {
       const cap = document.createElement('div');
       cap.className = 'sr-cap';
-      cap.textContent = '★ 收藏地点';
+      cap.textContent = t('search.favsCap');
       this.box.appendChild(cap);
       favs.forEach((f) => {
         const el = document.createElement('div');
@@ -69,7 +70,7 @@ export class Search {
       });
       const sep = document.createElement('div');
       sep.className = 'sr-cap';
-      sep.textContent = '─ 搜索结果 ─';
+      sep.textContent = t('search.resultsCap');
       this.box.appendChild(sep);
     }
     this.results.forEach((r, i) => {

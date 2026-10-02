@@ -3,6 +3,7 @@
  * 因此叠在气象图层之上也不会遮挡任何填色/粒子/雷达。
  */
 import { getView } from './util.js';
+import { neNameField, onChange as onLangChange } from './i18n.js';
 
 const FILES = {
   coast: 'ne_50m_coastline.geojson',
@@ -57,6 +58,7 @@ export class VectorBasemap {
     this._raf = 0;
 
     map.on('move zoom resize viewreset', () => this.schedule());
+    onLangChange(() => this.schedule()); // 语言切换 → 城市标注重绘
     this.schedule();
     loadData().then((data) => {
       this.data = data;
@@ -103,6 +105,7 @@ export class VectorBasemap {
           lon, lat, pop: p.pop_max || 0,
           cap: /capital/i.test(p.featurecla || '') || p.worldcity === 1,
           name: p.name,
+          props: p, /* 多语言名称字段(name_zh/name_ja/…),redraw 时按语言取 */
         };
       })
       .sort((a, b) => b.pop - a.pop);
@@ -158,7 +161,8 @@ export class VectorBasemap {
       }
     }
 
-    /* 城市标注:分级 + 视口内 + 贪心避让 */
+    /* 城市标注:分级 + 视口内 + 贪心避让;名称跟随界面语言(无本地化名回落英文名) */
+    const nameField = neNameField();
     const z = this.map.getZoom();
     let band = BANDS[0];
     for (const b of BANDS) if (z >= b.minZoom) band = b;
@@ -170,7 +174,9 @@ export class VectorBasemap {
       if (c.pop < band.pop) break;
       const pt = view.latLngToContainer(c.lat, c.lon);
       if (pt.x < 24 || pt.x > view.w - 24 || pt.y < 76 || pt.y > view.h - 16) continue; // 顶部避开 UI 栏
-      const w = c.name.length * (c.cap ? 7.2 : 6.6);
+      const label = (nameField && c.props[nameField]) || c.name;
+      ctx.font = c.cap ? '600 11.5px ' + FONT : '400 10.5px ' + FONT;
+      const w = ctx.measureText(label).width; /* CJK 与拉丁字母宽度差异交给真实测量 */
       const box = { x0: pt.x - w / 2, y0: pt.y - 13, x1: pt.x + w / 2, y1: pt.y };
       let hit = false;
       for (const b of placed) {
@@ -178,11 +184,10 @@ export class VectorBasemap {
       }
       if (hit) continue;
       placed.push(box);
-      ctx.font = c.cap ? '600 11.5px ' + FONT : '400 10.5px ' + FONT;
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-      ctx.strokeText(c.name, pt.x, pt.y);
+      ctx.strokeText(label, pt.x, pt.y);
       ctx.fillStyle = c.cap ? 'rgba(255, 255, 255, 0.96)' : 'rgba(233, 240, 250, 0.9)';
-      ctx.fillText(c.name, pt.x, pt.y);
+      ctx.fillText(label, pt.x, pt.y);
     }
   }
 }

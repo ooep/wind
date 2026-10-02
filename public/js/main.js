@@ -24,6 +24,7 @@ import { initShortcuts } from './shortcuts.js';
 import { Search } from './search.js';
 import { MeasureTool } from './measure.js';
 import { FavoritesUI } from './favs.js';
+import { t, ta, has, applyDom, initLangSelect, onChange as onLangChange } from './i18n.js';
 
 initApi(Grid);
 
@@ -124,8 +125,8 @@ const LAYERS = [
   { id: 'humidity', label: '湿度', unit: '%', cmap: RH, variable: 'rh', fmt: (v) => Math.round(v), levels: true },
   { id: 'frzlvl', label: '0°C层高度', unit: 'm', cmap: FRZLVL, variable: 'frzlvl', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
   { id: 'solar', label: '太阳辐射', unit: 'W/m²', cmap: SOLAR, variable: 'dswrf', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
-  { id: 'icing', label: '积冰风险', unit: '%', cmap: ICING, variable: 'icing', fmt: (v) => (v >= 60 ? '强' : v >= 30 ? '中' : v > 5 ? '轻' : '—'), models: ['gfs_raw'] },
-  { id: 'cat', label: '晴空湍流', unit: 'TI', cmap: CATC, variable: 'cat', fmt: (v) => (v >= 4.5 ? '强' : v >= 2 ? '中' : v > 0.4 ? '轻' : '—'), models: ['gfs_raw'] },
+  { id: 'icing', label: '积冰风险', unit: '%', cmap: ICING, variable: 'icing', fmt: (v) => (v >= 60 ? t('lv.strong') : v >= 30 ? t('lv.medium') : v > 5 ? t('lv.light') : '—'), models: ['gfs_raw'] },
+  { id: 'cat', label: '晴空湍流', unit: 'TI', cmap: CATC, variable: 'cat', fmt: (v) => (v >= 4.5 ? t('lv.strong') : v >= 2 ? t('lv.medium') : v > 0.4 ? t('lv.light') : '—'), models: ['gfs_raw'] },
   { id: 'thermals', label: '热气流·边界层顶', unit: 'm', cmap: FRZLVL, variable: 'hpbl', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
   { id: 'cloud', label: '总云量', unit: '%', cmap: CLOUD, variable: 'cloud', fmt: (v) => Math.round(v) },
   { id: 'lcdc', label: '低云', unit: '%', cmap: CLOUD, variable: 'lcdc', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
@@ -134,11 +135,11 @@ const LAYERS = [
   { id: 'cwat', label: '云水', unit: 'mm', cmap: CWAT, variable: 'cwat', fmt: (v) => v.toFixed(2), models: ['gfs_raw'] },
   { id: 'cloudbase', label: '云底高度', unit: 'm', cmap: FRZLVL, variable: 'cloudbase', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
   { id: 'cloudtop', label: '云顶高度', unit: 'm', cmap: FRZLVL, variable: 'cloudtop', fmt: (v) => String(Math.round(v / 100) * 100), models: ['gfs_raw'] },
-  { id: 'fog', label: '雾', unit: '', cmap: FOG, variable: 'fog', fmt: (v) => ['—', '可能', '大概率', '雾'][Math.round(v)] || '' },
+  { id: 'fog', label: '雾', unit: '', cmap: FOG, variable: 'fog', fmt: (v) => ta('foglv')[Math.round(v)] || '' },
   { id: 'precip', label: '降水', unit: 'mm/h', cat: 'precip', cmap: PRECIP, variable: 'precip', fmt: (v) => fmtPrecipStr(v) },
   { id: 'precip24', label: '降水·24h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip24', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'precip72', label: '降水·72h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip72', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
-  { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ['—', '雨', '冻雨', '雪'][Math.round(v)] || '' },
+  { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ta('ptypelv')[Math.round(v)] || '' },
   { id: 'vis', label: '能见度', unit: 'km', cmap: VIS, variable: 'vis', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
   { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
@@ -150,8 +151,8 @@ const LAYERS = [
   { id: 'gph', label: '位势高度', unit: 'm', cmap: gphCmap(500), variable: 'h', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'], levels: true, isolines: true },
   { id: 'soilw', label: '土壤湿度', unit: '%', cmap: SOILW, variable: 'soilw', fmt: (v) => Math.round(v * 100), models: ['gfs_raw'] },
   { id: 'soilt', label: '土壤温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'soilt', fmt: (v) => String(Math.round(convV('temp', v))), models: ['gfs_raw'] },
-  { id: 'fire', label: '火险', unit: 'CBI', cmap: FIRE, variable: 'fire', fmt: (v) => (v >= 97.5 ? '极端' : v >= 90 ? '很高' : v >= 75 ? '高' : v >= 50 ? '中' : v >= 20 ? '低' : '—'), models: ['gfs_raw'] },
-  { id: 'ffmc', label: '可燃物含水率', unit: '%', cmap: FFMC, variable: 'ffmc', fmt: (v) => (v >= 25 ? '湿' : v >= 16 ? '适中' : v >= 10 ? '干' : '极干'), models: ['gfs_raw'] },
+  { id: 'fire', label: '火险', unit: 'CBI', cmap: FIRE, variable: 'fire', fmt: (v) => (v >= 97.5 ? t('firelv.ext') : v >= 90 ? t('firelv.vhigh') : v >= 75 ? t('firelv.high') : v >= 50 ? t('firelv.med') : v >= 20 ? t('firelv.low') : '—'), models: ['gfs_raw'] },
+  { id: 'ffmc', label: '可燃物含水率', unit: '%', cmap: FFMC, variable: 'ffmc', fmt: (v) => (v >= 25 ? t('ffmc.wet') : v >= 16 ? t('ffmc.ok') : v >= 10 ? t('ffmc.dry') : t('ffmc.vdry')), models: ['gfs_raw'] },
   { id: 'wpd', label: '风功率密度', unit: 'W/m²', cmap: WPD, variable: 'wpd', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
   { id: 'ssta', label: '海温距平', unit: '°C', cmap: SSTA, variable: 'ssta', fmt: (v) => (v > 0 ? '+' : '') + (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1)), models: ['ocean_raw'], maskLand: true },
   { id: 'dust', label: '沙尘', unit: 'µg/m³', cmap: DUST, variable: 'dust', fmt: (v) => Math.round(v), models: ['chem_raw'] },
@@ -186,7 +187,7 @@ const LAYERS = [
   { id: 'so2', label: '二氧化硫', unit: 'μg/m³', cmap: SO2, special: 'aqi', aqField: 'so2', fmt: (v) => Math.round(v) },
   { id: 'uv', label: 'UV 指数', unit: '', cmap: UVI, special: 'aqi', aqField: 'u', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))) },
   /* NASA GIBS 卫星观测(零注册直连瓦片,官方预渲染配色) */
-  { id: 'fires', label: '活跃火点', unit: '', special: 'fires', cmap: FIRECONF, fmt: (v) => ['低', '中', '高'][Math.round(v)] || '' },
+  { id: 'fires', label: '活跃火点', unit: '', special: 'fires', cmap: FIRECONF, fmt: (v) => ta('fireConf')[Math.round(v)] || '' },
   { id: 'imerg', label: '卫星降水', unit: 'mm/h', cat: 'precip', cmap: IMERRG, special: 'gibs',
     gibs: { gibs: 'IMERG_Precipitation_Rate_30min', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'min30', attr: 'NASA GPM IMERG / GIBS' },
     fmt: (v) => (v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : String(Math.round(v))) },
@@ -247,6 +248,21 @@ function varNeeds(def) {
 }
 const layerById = (id) => LAYERS.find((l) => l.id === id);
 
+/* i18n:图层/分组/叠加的 label(含 overlay title)改为按语言取词的 getter —
+ * 词典缺键(如后续新增图层)时保留定义处的原标签,不会显示键名 */
+function localizeLabels(list, prefix) {
+  for (const item of list) {
+    const key = `${prefix}.${item.id}`;
+    if (!has(key)) continue;
+    Object.defineProperty(item, 'label', { get: () => t(key), configurable: true });
+    if (item.title && has(`${key}.title`)) {
+      Object.defineProperty(item, 'title', { get: () => t(`${key}.title`), configurable: true });
+    }
+  }
+}
+localizeLabels(LAYERS, 'layer');
+localizeLabels(GROUPS, 'group');
+
 /* 图层色标(位势高度按当前气压层取对应色标)与等值线间距 gpm */
 const GPH_INT = { 925: 30, 850: 40, 700: 50, 500: 60, 300: 90, 250: 120, 200: 120, 150: 160, 100: 200, 70: 240, 10: 320 };
 function layerCmap(def) {
@@ -282,17 +298,8 @@ const urlState = (() => {
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 let urlTimer = 0;
 
-const MODEL_LABELS = {
-  gfs_raw: 'NOAA GFS 0.5°(AWS 开放数据,原始 GRIB2 自解码)',
-  gfs_snow: 'NOAA GFS 0.5° 高分辨雪包(仅积雪/新雪,AWS 开放数据,原始 GRIB2 自解码)',
-  gefs_raw: 'NOAA GEFS 控制成员 0.5°(AWS 开放数据,原始 GRIB2 自解码)',
-  ecmwf_raw: 'ECMWF IFS 0.25°(ECMWF Open Data,原始 GRIB2 自解码)',
-  aifs_raw: 'ECMWF AIFS 0.25°(AI 模式,ECMWF Open Data,原始 GRIB2 自解码)',
-  waves_raw: 'NOAA GFS Wave 0.25°(海浪模式,AWS 开放数据,原始 GRIB2 自解码)',
-  ocean_raw: 'NOAA OISST 日更海温(NCEI,逐日分析场)',
-  best_match: 'Open-Meteo 最佳匹配', gfs_seamless: 'Open-Meteo NOAA GFS',
-  icon_seamless: 'Open-Meteo DWD ICON', ecmwf_ifs025: 'Open-Meteo ECMWF IFS',
-};
+/* 模式标签按语言取词(代理保持 MODEL_LABELS[m] 用法不变) */
+const MODEL_LABELS = new Proxy({}, { get: (_, m) => t('model.' + String(m)) });
 
 const state = {
   model: urlState.m || 'gfs_raw',
@@ -394,10 +401,10 @@ function updateLegend() {
 }
 
 /* Ventusky 式:点击色标循环切换该图层的单位制 */
-legendEl.title = '点击切换单位';
+legendEl.title = t('ui.legendCycle');
 legendEl.addEventListener('click', () => {
   const def = layerById(state.layer);
-  if (!def || !def.cat) { hint('该图层暂无单位切换'); return; }
+  if (!def || !def.cat) { hint(t('hint.noUnit')); return; }
   cycleUnit(def.cat);
 });
 
@@ -408,7 +415,7 @@ function applyLegendPref() {
 document.getElementById('legend-btn').addEventListener('click', () => {
   const off = document.body.classList.toggle('legend-off');
   try { localStorage.setItem('fy_legend_off', off ? '1' : '0'); } catch { /* 隐私模式 */ }
-  hint(off ? '图例已隐藏' : '图例已显示');
+  hint(off ? t('hint.legendOff') : t('hint.legendOn'));
 });
 
 /* ---------- 图层切换(分组手风琴) ---------- */
@@ -530,7 +537,7 @@ async function setLayer(id, silent = false) {
    * 图层点开即用,无需手动到右下角切换模式 */
   const target = await resolveLayerModel(def0);
   if (!target) {
-    toast(`「${def0.label}」的数据模式尚未上线,请稍后再试`);
+    toast(t('toast.layerUnavailable', { name: def0.label }));
     return;
   }
   const switched = target !== state.model;
@@ -584,7 +591,7 @@ async function setLayer(id, silent = false) {
     try {
       await ensureGridVars(state.grid, needs);
     } catch (e) {
-      toast(`图层数据加载失败:${e.message}`);
+      toast(t('toast.layerLoadFail', { msg: e.message }));
     } finally {
       loadingEl.hidden = true;
     }
@@ -593,7 +600,7 @@ async function setLayer(id, silent = false) {
   if (!state.grid) scheduleGridFetch(0);
   refreshModelPill();
   onTimeChange(state.timePos);
-  if (!silent) hint(switched ? `图层 · ${def.label} · 已切换到 ${MODEL_SHORT[target] || target}` : `图层 · ${def.label}`);
+  if (!silent) hint(switched ? t('hint.switched', { name: def.label, model: MODEL_SHORT[target] || target }) : t('hint.layer', { name: def.label }));
 }
 
 /* 粒子开关 */
@@ -621,15 +628,20 @@ const OVERLAYS = [
 ];
 const overlayBtnBox = document.getElementById('overlay-buttons');
 const satChannelWrap = document.getElementById('sat-channel-wrap');
-for (const ov of OVERLAYS) {
-  const btn = document.createElement('button');
-  btn.className = 'layer-btn overlay-btn';
-  btn.id = `ov-${ov.id}`;
-  btn.title = ov.title;
-  btn.innerHTML = `${ov.icon}<span>${ov.label}</span>`;
-  btn.addEventListener('click', () => toggleOverlay(ov.id, !state.overlays.has(ov.id)));
-  overlayBtnBox.appendChild(btn);
+function buildOverlayButtons() {
+  overlayBtnBox.innerHTML = '';
+  for (const ov of OVERLAYS) {
+    const btn = document.createElement('button');
+    btn.className = 'layer-btn overlay-btn';
+    btn.id = `ov-${ov.id}`;
+    btn.title = ov.title;
+    btn.innerHTML = `${ov.icon}<span>${ov.label}</span>`;
+    btn.addEventListener('click', () => toggleOverlay(ov.id, !state.overlays.has(ov.id)));
+    overlayBtnBox.appendChild(btn);
+  }
 }
+localizeLabels(OVERLAYS, 'overlay');
+buildOverlayButtons();
 document.getElementById('sat-channel').value = satellite.channel;
 document.getElementById('sat-channel').addEventListener('change', (e) => {
   satellite.setChannel(e.target.value);
@@ -713,7 +725,7 @@ async function fetchGridNow() {
     if (specKey(latest) !== key) { return; }
     if (grid.stale) {
       const ageH = Math.max(1, Math.round((Date.now() / 1000 - (grid.generated || 0)) / 3600));
-      toast(`上游数据源限流中,正在展示约 ${ageH} 小时前缓存的气象数据`);
+      toast(t('toast.stale', { h: ageH }));
     }
     applyGrid(grid, key);
   } catch (e) {
@@ -722,19 +734,19 @@ async function fetchGridNow() {
       rateLimited = true;
       state.fetchingKey = '';
       loadingEl.hidden = true;
-      toast('数据源当日免费配额已用尽,明日自动恢复;设置 OPEN_METEO_API_KEY 环境变量可获得更高配额(见 README)');
+      toast(t('toast.quota'));
       return;
     }
     if (/limit|429/i.test(msg)) {
       rateLimited = true;
       state.fetchingKey = '';
       loadingEl.hidden = true;
-      toast('上游数据源限流中,90 秒后自动重试…');
+      toast(t('toast.ratelimit'));
       clearTimeout(fetchTimer);
       fetchTimer = setTimeout(fetchGridNow, 90_000);
       return;
     }
-    toast(`气象格点加载失败:${msg},15 秒后自动重试`);
+    toast(t('toast.gridFail', { msg }));
     clearTimeout(fetchTimer);
     fetchTimer = setTimeout(() => { state.fetchingKey = ''; fetchGridNow(); }, 15_000);
     return;
@@ -757,7 +769,7 @@ function applyGrid(grid, key) {
   /* 静态模式:确保当前图层 + 粒子所需变量已就绪再首帧渲染 */
   const needs = needsFor(layerById(state.layer));
   const pending = needs.some((vk) => !grid.vars[vk.split('@')[0]])
-    ? ensureGridVars(grid, needs).catch((e) => toast(`部分图层数据未就绪:${e.message}`))
+    ? ensureGridVars(grid, needs).catch((e) => toast(t('toast.partialVars', { msg: e.message })))
     : Promise.resolve();
   pending.then(() => {
     if (state.grid !== grid) return; // 期间已切换到更新的格点
@@ -793,7 +805,7 @@ function onTimeChange(ms) {
 const tipEl = document.getElementById('cursor-tip');
 const tipVal = document.getElementById('ct-val');
 const tipSub = document.getElementById('ct-sub');
-const DIR8 = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+let DIR8 = ta('dir8'); // 语言切换时重取
 let tipRaf = 0, tipXY = [0, 0], tipLL = null;
 
 function tipContent(def, ll) {
@@ -811,7 +823,7 @@ function tipContent(def, ll) {
       const bearing = (x, y) => (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
       const to = Math.round(bearing(u, w));          // 指向下风方向(箭头去向)
       const from = DIR8[Math.round(bearing(-u, -w) / 45) % 8];
-      main = `<i class="ct-arrow" style="transform:rotate(${to - 90}deg)">➤</i>${Math.round(convV('wind', v))} ${unitLabel('wind')} ${from}风`;
+      main = `<i class="ct-arrow" style="transform:rotate(${to - 90}deg)">➤</i>${Math.round(convV('wind', v))} ${unitLabel('wind')} ${t('windFmt', { dir: from })}`;
     }
   }
   const lonN = ((ll.lng + 540) % 360) - 180;
@@ -839,18 +851,14 @@ map.on('mousemove', (e) => {
 map.on('mouseout movestart', () => { tipEl.hidden = true; });
 
 /* ---------- 设置 ---------- */
-const MODEL_SHORT = {
-  gfs_raw: 'NOAA GFS', gfs_snow: 'GFS 雪', gefs_raw: 'NOAA GEFS', ecmwf_raw: 'ECMWF IFS', aifs_raw: 'ECMWF AIFS',
-  waves_raw: 'NOAA Wave', ocean_raw: 'OISST 海温',
-  best_match: 'OM 最佳匹配', gfs_seamless: 'OM GFS', icon_seamless: 'OM ICON', ecmwf_ifs025: 'OM ECMWF',
-};
+const MODEL_SHORT = new Proxy({}, { get: (_, m) => (has('modelShort.' + String(m)) ? t('modelShort.' + String(m)) : m) });
 document.getElementById('model-select').addEventListener('change', (e) => {
   const m = e.target.value;
   if (!m || m === state.model) return;
   /* 选择器只列出当前图层可用的模式,切换即生效,无需兜底跳转主图层 */
   applyModelCore(m);
   syncUrl();
-  hint(`模式 · ${MODEL_SHORT[m] || m}`);
+  hint(t('hint.model', { model: MODEL_SHORT[m] || m }));
   particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
   particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');
   scheduleGridFetch(0);
@@ -871,13 +879,22 @@ setDegUnit(units.temp.toLowerCase());
 const about = document.getElementById('about');
 document.getElementById('about-btn').addEventListener('click', () => about.showModal());
 document.getElementById('about-close').addEventListener('click', () => about.close());
+/* 关于弹窗正文按界面语言渲染(词典 about.rows = [标题, HTML] 列表) */
+function renderAbout() {
+  const body = document.getElementById('about-body');
+  if (!body) return;
+  const rows = ta('about.rows');
+  body.innerHTML = '<table>' + rows.map(([h, b]) => `<tr><th>${h}</th><td>${b}</td></tr>`).join('') + '</table>'
+    + `<p>${t('about.license')}</p>`;
+}
+renderAbout();
 
 /* ---------- 全屏 ---------- */
 document.getElementById('fs-btn').addEventListener('click', async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await document.documentElement.requestFullscreen();
-  } catch { toast('浏览器拒绝了全屏请求'); }
+  } catch { toast(t('toast.fullscreen')); }
 });
 
 /* ---------- 移动端设置抽屉 ---------- */
@@ -992,20 +1009,20 @@ document.getElementById('share-btn').addEventListener('click', async () => {
   syncUrl();
   try {
     await navigator.clipboard.writeText(location.href);
-    toast('分享链接已复制到剪贴板');
+    toast(t('toast.copyOk'));
   } catch {
-    toast('复制失败,请手动复制地址栏链接');
+    toast(t('toast.copyFail'));
   }
 });
 document.getElementById('loc-btn').addEventListener('click', () => {
-  if (!navigator.geolocation) { toast('浏览器不支持定位'); return; }
-  toast('正在获取位置…');
+  if (!navigator.geolocation) { toast(t('toast.geoUnsupported')); return; }
+  toast(t('toast.locating'));
   navigator.geolocation.getCurrentPosition((pos) => {
     const { latitude: lat, longitude: lon } = pos.coords;
     map.flyTo([lat, lon], 10, { duration: 1.2 });
     setPin(lat, lon);
     panel.open(lat, lon);
-  }, () => toast('定位失败:未授权或不可用'), { enableHighAccuracy: false, timeout: 10000 });
+  }, () => toast(t('toast.locFail')), { enableHighAccuracy: false, timeout: 10000 });
 });
 
 /* ---------- Toast ---------- */
@@ -1031,7 +1048,7 @@ function hint(msg, ms = 1500) {
 
 /* ---------- 气压层选择器 ---------- */
 const LEVELS_UI = [
-  { v: 0, label: '表面' }, { v: 925, label: '925' }, { v: 850, label: '850' },
+  { v: 0, get label() { return t('level.surface'); } }, { v: 925, label: '925' }, { v: 850, label: '850' },
   { v: 700, label: '700' }, { v: 500, label: '500' }, { v: 300, label: '300' },
   { v: 250, label: '250' }, { v: 200, label: '200' }, { v: 150, label: '150' }, { v: 100, label: '100' },
   { v: 70, label: '70' }, { v: 10, label: '10' },
@@ -1064,7 +1081,7 @@ function setLevel(v) {
     updateLegend();
   }
   const l = LEVELS_UI.find((x) => x.v === v);
-  hint(`气压层 · ${l ? l.label : v} hPa`);
+  hint(t('hint.level', { v: l ? l.label : v }));
 }
 
 /* ---------- 启动 ---------- */
@@ -1090,8 +1107,23 @@ particles.start();
 if (urlState.t) state.pendingTime = num(urlState.t, 0);
 fetchGridNow();
 
+/* ---------- 语言(i18n):静态文案 + 选择器 + 切换热更新 ---------- */
+applyDom();
+initLangSelect();
+onLangChange(() => {
+  DIR8 = ta('dir8');
+  renderLayerGroups();
+  buildOverlayButtons();
+  refreshModelPill();
+  updateLevelBar();
+  updateLegend();
+  timeline.refresh();
+  renderAbout();
+  panel.refresh();
+});
+
 /* 首访提示 */
 if (!localStorage.getItem('fy_hint_shown')) {
   try { localStorage.setItem('fy_hint_shown', '1'); } catch { /* 隐私模式 */ }
-  toast('点击地图任意位置查看该点详细预报 · 悬停可读取数值 · 空格播放时间动画', 9000);
+  toast(t('toast.firstVisit'), 9000);
 }

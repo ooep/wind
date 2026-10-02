@@ -1,5 +1,6 @@
 /* 单位注册表:全局单位制状态 + 换算 + 持久化(hash u= 参数 + localStorage)
  * 图例/悬停读数/时间轴/面板实况块统一从这里取单位,设置弹层按分组切换。 */
+import { t } from './i18n.js';
 
 const CATS = {
   temp: { row: '温度', opts: ['C', 'F'], labels: { C: '°C', F: '°F' } },
@@ -21,7 +22,7 @@ const CONV = {
 };
 
 export const convV = (cat, v) => CONV[cat][units[cat]](v);
-export const unitLabel = (cat) => CATS[cat].labels[units[cat]];
+export const unitLabel = (cat) => t('unit.' + units[cat]);
 
 /* 气压/降水的整编字符串(hPa 取整;inHg 两位小数;mm 一位/取整,in 自适应) */
 export function fmtPresStr(hpa) {
@@ -109,9 +110,9 @@ function renderPop() {
   const pop = document.getElementById('units-pop');
   if (!pop || pop.hidden) return;
   pop.innerHTML = Object.keys(CATS).map((cat) => `
-    <div class="up-row"><span>${CATS[cat].row}</span>
+    <div class="up-row"><span>${t('urow.' + cat)}</span>
       <div class="up-opts">${CATS[cat].opts.map((o) =>
-        `<button data-cat="${cat}" data-opt="${o}" class="${units[cat] === o ? 'active' : ''}">${CATS[cat].labels[o]}</button>`).join('')}
+        `<button data-cat="${cat}" data-opt="${o}" class="${units[cat] === o ? 'active' : ''}">${t('unit.' + o)}</button>`).join('')}
       </div>
     </div>`).join('');
   pop.querySelectorAll('.up-opts button').forEach((b) => {
