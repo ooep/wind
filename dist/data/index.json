@@ -1,6 +1,11 @@
 {
-  "generated": 1790908422,
+  "generated": 1790908698,
   "models": {
+    "gefs_raw": {
+      "runKey": "20261001-18",
+      "meta": "meta.json",
+      "global": "global-2.5.json"
+    },
     "gfs_raw": {
       "runKey": "20261001-18",
       "meta": "meta.json",
