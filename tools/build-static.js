@@ -128,7 +128,13 @@ async function main() {
 
   fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ generated: Math.floor(Date.now() / 1000), models: index }, null, 2));
-  console.log(`\n全部完成 → ${OUT}/index.json`);
+  // Cloudflare Pages / 静态托管:CORS 允许前端站点跨域取数 + 浏览器缓存 10 分钟
+  fs.writeFileSync(path.join(OUT, '_headers'), [
+    '/*',
+    '  Access-Control-Allow-Origin: *',
+    '  Cache-Control: public, max-age=600',
+  ].join('\n'));
+  console.log(`\n全部完成 → ${OUT}/index.json(含 _headers)`);
 }
 
 function iso(ms) {

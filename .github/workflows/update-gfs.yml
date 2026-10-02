@@ -44,26 +44,21 @@ jobs:
           path: .cache/gfsraw
           key: ingest-gfs_raw-latest-${{ github.run_id }}
 
-      - name: 发布到 data-dist
+      - name: 发布数据到仓库(触发 Cloudflare Pages 自动部署)
         run: |
           git config user.name  "fy-data-bot"
           git config user.email "fy-data-bot@users.noreply.github.com"
-          mkdir -p /tmp/fytools/tools
-          cp tools/build-static.js /tmp/fytools/tools/
-          cp -r server /tmp/fytools/server
-          if git fetch origin data-dist 2>/dev/null; then
-            git checkout -B data-dist origin/data-dist
-          else
-            git checkout --orphan data-dist
-            git rm -rf --cached . -q 2>/dev/null || true
-          fi
+          git pull --rebase origin main || true
+          rm -rf dist/data
           mkdir -p dist/data
           cp -r out/data/. dist/data/
-          node /tmp/fytools/tools/build-static.js --out dist/data --index-only
-          git add -f dist/data
+          # 只保留各模式最新一轮 run,防止仓库膨胀
+          find dist/data -mindepth 2 -maxdepth 2 -type d -name '20*' -mtime +2 -exec rm -rf {} + 2>/dev/null || true
+          node tools/build-static.js --out dist/data --index-only
+          git add dist/data
           git commit -m "data update $(date -u '+%Y-%m-%dT%H:%MZ')" || echo "无变更"
           for i in 1 2 3 4 5; do
-            git push origin data-dist && break
-            git fetch origin data-dist
-            git rebase origin/data-dist 2>/dev/null || true
+            git push origin main && break
+            sleep 20
+            git pull --rebase origin main || true
           done

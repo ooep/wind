@@ -1,15 +1,38 @@
 /* API 客户端:双模式
  *  - 服务端模式(默认):/api/grid /api/point /api/geocode 由 Node 服务提供
- *  - 静态模式:window.FY_CONFIG.staticData 或 URL ?data=<路径> 指向静态数据仓库
- *    (GitHub Actions 定时生成 → 静态托管),格点/点预报/对比全部在浏览器本地计算。
+ *  - 静态模式:数据来自静态数据仓库(GitHub Actions 定时生成并提交到本仓库
+ *    dist/data/,Cloudflare Pages 绑定仓库后随站点同域提供,零服务器、抗攻击)。
+ *
+ * 模式探测顺序:
+ *  1. window.FY_CONFIG.staticData 或 URL ?data=<路径>(显式指定)
+ *  2. 自动探测 /dist/data/index.json(仓库绑定的 Pages 部署存在 → 静态模式)
+ *  3. 都不存在 → 服务端模式
  */
 import { Grid } from './util.js';
 
-export const IS_STATIC = !!(window.FY_CONFIG && window.FY_CONFIG.staticData) ||
-  new URLSearchParams(location.search).has('data');
-export const STATIC_BASE = IS_STATIC
-  ? ((window.FY_CONFIG && window.FY_CONFIG.staticData) || new URLSearchParams(location.search).get('data') || '').replace(/\/$/, '')
-  : '';
+let STATIC_BASE = '';
+let staticMode = false;
+let modePromise = null;
+
+export function isStatic() { return staticMode; }
+export function staticBase() { return STATIC_BASE; }
+
+export async function resolveMode() {
+  if (modePromise) return modePromise;
+  modePromise = (async () => {
+    // 1. 显式配置
+    const explicit = (window.FY_CONFIG && window.FY_CONFIG.staticData) ||
+      new URLSearchParams(location.search).get('data');
+    if (explicit) { STATIC_BASE = String(explicit).replace(/\/$/, ''); staticMode = true; return; }
+    // 2. 自动探测:同域 /dist/data(Actions 数据提交随站点部署)
+    try {
+      const r = await fetch('/dist/data/index.json', { method: 'HEAD' });
+      if (r.ok) { STATIC_BASE = '/dist/data'; staticMode = true; return; }
+    } catch { /* 探测失败按服务端模式 */ }
+    // 3. 服务端模式
+  })();
+  return modePromise;
+}
 
 const gridCache = new Map(); // key -> Grid
 const GRID_CACHE_MAX = 4;
@@ -213,7 +236,8 @@ function sunTimesLocal(dayStartUtcMs, lat, lon) {
 /* ---------------- 对外接口 ---------------- */
 
 export async function fetchGrid(params) {
-  if (IS_STATIC) {
+  await resolveMode();
+  if (staticMode) {
     const grid = await staticModelGrid(params.model);
     return { grid, cached: true };
   }
@@ -240,7 +264,8 @@ export async function fetchGrid(params) {
 export function clearGridCache() { gridCache.clear(); staticGrids.clear(); }
 
 export async function fetchPoint(lat, lon, model) {
-  if (IS_STATIC) return staticPoint(lat, lon, model);
+  await resolveMode();
+  if (staticMode) return staticPoint(lat, lon, model);
   const qs = new URLSearchParams({ lat, lon, model });
   const res = await fetch(`/api/point?${qs}`);
   const data = await res.json();
@@ -249,7 +274,8 @@ export async function fetchPoint(lat, lon, model) {
 }
 
 export async function fetchGeocode(name) {
-  if (IS_STATIC) {
+  await resolveMode();
+  if (staticMode) {
     const qs = new URLSearchParams({ name, count: '8', language: 'zh' });
     const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${qs}`);
     if (!res.ok) throw new Error('地名检索失败');
@@ -263,7 +289,8 @@ export async function fetchGeocode(name) {
 }
 
 export async function fetchRadarMeta() {
-  if (IS_STATIC) {
+  await resolveMode();
+  if (staticMode) {
     const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
     if (!res.ok) throw new Error('雷达数据加载失败');
     return res.json();

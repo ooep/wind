@@ -1,0 +1,8 @@
+/geo/*
+  Cache-Control: public, max-age=604800
+/dist/data/index.json
+  Cache-Control: no-cache
+/dist/data/*
+  Cache-Control: public, max-age=600
+/index.html
+  Cache-Control: no-cache
