@@ -38,6 +38,11 @@ jobs:
           key: ingest-waves_raw-latest
           restore-keys: ingest-waves_raw-
 
+      - name: 预检 NOAA Wave 数据可达性
+        run: |
+          echo "curl 探测 idx:"; curl -s -o /dev/null -w "%{http_code}\n" "https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.20261002/00/wave/gridded/gfswave.t00z.global.0p25.f000.grib2.idx" || true
+          echo "node fetch 探测:"; node -e "fetch('https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.20261002/00/wave/gridded/gfswave.t00z.global.0p25.f000.grib2.idx').then(r=>console.log('node:',r.status)).catch(e=>console.log('node ERR:',e.message))"
+
       - name: 生成静态数据包
         run: |
           node tools/build-static.js --out out/data --models waves_raw

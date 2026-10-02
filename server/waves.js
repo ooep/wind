@@ -50,11 +50,17 @@ const WAVES = {
     const hh = runKey.split('/')[1];
     const fileTag = `f${String(step).padStart(3, '0')}`;
     const url = `${S3}/gfs.${runKey}/wave/gridded/gfswave.t${hh}z.global.0p25.${fileTag}`;
-    const recs = parseGfsStyleIdx(await fetchBuf(`${url}.idx`));
+    let idxBuf;
+    try {
+      idxBuf = await fetchBuf(`${url}.idx`, 4);
+    } catch (e) {
+      throw new Error(`${e.message} @ ${url}.idx`);
+    }
+    const recs = parseGfsStyleIdx(idxBuf);
     const cfg = VARCFG[varKey];
     const rec = recs.find((x) => x.var === cfg.grib && x.level === cfg.level && !/ave|acc/.test(x.ts));
     if (!rec) throw new Error(`idx 中未找到 ${varKey}(${cfg.grib})@f${step}`);
-    const data = await fetchBuf(url, 5, { Range: `bytes=${rec.start}-${rec.end - 1}` });
+    const data = await fetchBuf(url, 4, { Range: `bytes=${rec.start}-${rec.end - 1}` });
     const total = Number(data.readBigUInt64BE(8));
     const m = findMessages(total <= data.length ? data : data.subarray(0, total))[0];
     if (!m) throw new Error('Range 内未找到 GRIB 消息');
