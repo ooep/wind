@@ -21,7 +21,9 @@ const SENTINEL = -32768;
 
 /* ---------------- HTTP 基础(带慢速源退避) ---------------- */
 
-async function fetchBuf(url, retries = 6, headers = {}, backoffBase = 800) {
+/* 慢速源(ECMWF/Azure 503 slowdown)可整小时持续:耐心重试 + 随机抖动,
+ * 抢到零星成功即可写入缓存,下一轮断点续传累积(零成功 = 缓存永远播不上种) */
+async function fetchBuf(url, retries = 9, headers = {}, backoffBase = 800) {
   let lastErr;
   for (let i = 0; i <= retries; i++) {
     try {
@@ -32,7 +34,8 @@ async function fetchBuf(url, retries = 6, headers = {}, backoffBase = 800) {
     } catch (e) {
       lastErr = e;
       const slow = /slowdown|429/i.test(String(e.message));
-      await new Promise((s) => setTimeout(s, Math.min(backoffBase * (i + 1) * (slow ? 3 : 1), 30_000)));
+      const wait = backoffBase * (i + 1) * (slow ? 3 : 1) * (0.5 + Math.random());
+      await new Promise((s) => setTimeout(s, Math.min(wait, slow ? 60_000 : 30_000)));
     }
   }
   throw lastErr;
