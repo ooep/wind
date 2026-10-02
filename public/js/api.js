@@ -295,6 +295,7 @@ async function staticPoint(lat, lon, model, needs) {
 
 /* 静态模式可用模式列表(供模型选择器过滤) */
 export async function staticAvailableModels() {
+  await resolveMode(); // 启动竞态:调用早于模式探测完成时 staticMode 尚为 false
   if (!staticMode) return null;
   try {
     const index = await staticIndexGet();
