@@ -920,9 +920,10 @@ window.__app_map = map;
 window.__app_overlays = { lightning, satellite, tropical, stations, aurora }; // 调试钩子:叠加层状态
 /* 静态模式:模型选择器只保留静态包里实际存在的模式 */
 staticAvailableModels().then((avail) => {
-  if (!avail || avail.includes(state.model)) return;
+  if (!avail || !avail.length) return;
   const sel = document.getElementById('model-select');
   [...sel.options].forEach((o) => { if (!avail.includes(o.value)) o.hidden = true; });
+  if (avail.includes(state.model)) return;
   const fallback = avail.includes('gfs_raw') ? 'gfs_raw' : avail[0];
   sel.value = fallback;
   sel.dispatchEvent(new Event('change'));

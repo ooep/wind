@@ -58,6 +58,17 @@ function varScale(model, vk) {
   return 1;
 }
 
+/* 全空守卫:上游摄取失败(如 ECMWF 503 风暴)时变量几乎全 NaN——拒绝发布,
+ * 让工作流失败 → deploy-data 不组装,生产保留上一份好数据(而非静默换上空包) */
+function guardEmptyData(vals, label) {
+  let finite = 0;
+  for (let i = 0; i < vals.length; i++) if (!Number.isNaN(vals[i])) finite++;
+  if (finite < vals.length * 0.005) {
+    console.error(`✗ ${label} 有效值仅 ${(finite / vals.length * 100).toFixed(2)}%,判定上游摄取失败,拒绝发布(线上保留旧包)`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   /* --index-only:扫描输出目录,重建 index.json(publish 阶段使用) */
   if (flag('index-only')) {
@@ -134,6 +145,7 @@ async function main() {
         const nP = raw.lons.length * raw.lats.length;
         const out = new Float32Array(keep.length * nP);
         keep.forEach((t, ki) => out.set(all.subarray(t * nP, (t + 1) * nP), ki * nP));
+        guardEmptyData(out, `${model}.${vk}`);
         const scale = varScale(model, vk);
         const q = new Int16Array(out.length);
         for (let i = 0; i < out.length; i++) {
@@ -254,6 +266,7 @@ async function main() {
     for (const [vk, b64] of Object.entries(coarse.vars)) {
       const f32 = Buffer.from(b64, 'base64');
       const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
+      guardEmptyData(vals, `${model}.${vk}`);
       const scale = varScale(model, vk);
       const q = new Int16Array(vals.length);
       for (let i = 0; i < vals.length; i++) {
@@ -287,6 +300,7 @@ async function main() {
         for (const [vk, b64] of Object.entries(lg.vars)) {
           const f32 = Buffer.from(b64, 'base64');
           const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
+          guardEmptyData(vals, `${model}.${vk}@${level}`);
           const scale = varScale(model, vk);
           const q = new Int16Array(vals.length);
           for (let i = 0; i < vals.length; i++) {
