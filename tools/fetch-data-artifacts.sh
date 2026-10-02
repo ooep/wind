@@ -21,10 +21,15 @@ fetch_model() {
     return 0
   fi
   if [ -d "/tmp/art_$model/$model" ]; then
-    rm -rf "dist/data/$model"
-    mkdir -p dist/data
-    cp -r "/tmp/art_$model/$model" "dist/data/$model"
-    echo "[$model] 已更新到 run 产物"
+    # 全哨兵守卫:上游摄取失败也会出包(全 -32768),拒绝替换线上数据
+    if node tools/check-artifact.js "/tmp/art_$model/$model"; then
+      rm -rf "dist/data/$model"
+      mkdir -p dist/data
+      cp -r "/tmp/art_$model/$model" "dist/data/$model"
+      echo "[$model] 已更新到 run 产物"
+    else
+      echo "[$model] 产物数据全哨兵/无效,保留仓库内数据"
+    fi
   else
     echo "[$model] 产物内容异常,保留仓库内数据"
   fi

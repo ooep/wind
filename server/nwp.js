@@ -703,7 +703,13 @@ ECMWF.steps = (R) => {
 /* AIFS:ECMWF 机器学习模式(6 小时步长) */
 const AIFS = ecmwfLike('aifs_raw', 'ECMWF AIFS 0.25°(AI 模式,ECMWF Open Data)', 'aifs-single/0p25/oper', 2);
 AIFS.varCfg = ECMWF_VARS;
-AIFS.discoverRuns = ECMWF.discoverRuns; // 同一发布管道,run 可用性一致
+AIFS.discoverRuns = async function () {
+  // 借用 IFS listing 做可用性探测,但 AIFS 只发布 00/12Z:
+  // 06/18Z 的 AIFS 数据在 S3 上不存在,当选中 R/P 时必然整帧 404
+  const runs = (await ECMWF.discoverRuns()).filter((r) => /\/(00|12)$/.test(r.key));
+  if (!runs.length) throw new Error('未找到可用的 AIFS Open Data run(00/12Z)');
+  return runs;
+};
 AIFS.steps = () => {
   const arr = [0];
   for (let s = 6; s <= AIFS.maxF; s += 6) arr.push(s); // AIFS 原生 6 小时步长
