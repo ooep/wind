@@ -379,7 +379,7 @@ particleBtn.addEventListener('click', () => {
 const OVERLAYS = [
   { id: 'lightning', label: '闪电', title: 'Blitzortung 实时闪电 · 最近 90 分钟',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M13 2 5 13h5l-1.5 9L19 10h-5l1-8z" fill="currentColor"/></svg>' },
-  { id: 'satellite', label: '卫星', title: '卫星云图:全球真彩(VIIRS 每日)/ GOES 红外(10 分钟)',
+  { id: 'satellite', label: '卫星', title: '卫星云图:GOES/向日葵9 红外与真彩(10 分钟)/ 全球真彩·夜光(VIIRS 每日)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 4.5a3 3 0 1 1 0 6 3 3 0 0 1 0-6z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 7.5a6.5 6.5 0 0 1 2.6-5.2M18.5 7.5a6.5 6.5 0 0 0-2.6-5.2M8.1 2.3 7 3.4M16.9 2.3l1.1 1.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.5 13.5 4 18M15.5 13.5 20 18M9.5 20.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>' },
   { id: 'tropical', label: '台风', title: '活动热带气旋路径:JMA(西太平洋)+ NOAA NHC(大西洋/东太平洋)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3.4" fill="currentColor"/><path d="M12 4a8 8 0 0 1 7 4.2M12 20a8 8 0 0 1-7-4.2M5.6 8.6A8 8 0 0 1 12 4M18.4 15.4A8 8 0 0 1 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
