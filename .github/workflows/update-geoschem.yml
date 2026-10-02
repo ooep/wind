@@ -1,0 +1,43 @@
+name: data · GEOS-5 化学(全球场)
+
+# 化学场管道:nullschool 空气质量组同源数据。NASA GMAO OPeNDAP 免账号直读
+# (GOCART 气溶胶地表质量浓度 + CO2 地表浓度,0.3125°×0.25°,3 小时步长,发布滞后 ~4h)
+# → python 解码降采样 0.5° → per-var 静态包 → artifact(deploy-data 统一组装部署)。
+# 模式 id:chem_raw(独立模型,时间轴 2 帧)。
+
+on:
+  schedule:
+    - cron: '50 2,5,8,11,14,17,20,23 * * *'   # UTC 每 3h(GEOS 批次发布后)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-chem_raw
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install --quiet netCDF4 numpy
+
+      - name: 烘焙化学场静态包
+        run: python3 tools/bake-chem.py out/data
+
+      - name: 上传数据产物(deploy-data 工作流统一组装部署,数据不再提交 main)
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-chem_raw
+          path: out/data/
+          retention-days: 3
+          if-no-files-found: error

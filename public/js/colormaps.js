@@ -261,6 +261,33 @@ export const SSTA = makeScale([
   [6, 170, 20, 30, 238], [12, 100, 0, 60, 242],
 ]);
 
+/* GEOS-5 化学场(nullschool 空气质量组同源) */
+export const CO2F = makeScale([
+  [405, 60, 120, 220, 218], [415, 120, 190, 235, 222], [425, 235, 235, 215, 224],
+  [435, 245, 180, 90, 230], [445, 230, 90, 60, 236], [465, 150, 30, 110, 242],
+]);
+export const DUST = makeScale([
+  [0, 190, 170, 130, 0], [10, 214, 192, 140, 180], [50, 226, 190, 110, 220],
+  [200, 226, 150, 60, 230], [600, 200, 100, 40, 236], [1500, 150, 60, 40, 240],
+  [3000, 110, 30, 60, 244],
+]);
+export const SO4F = makeScale([
+  [0, 130, 110, 200, 0], [2, 160, 140, 220, 190], [10, 190, 120, 225, 220],
+  [30, 225, 80, 190, 230], [60, 170, 30, 150, 238],
+]);
+export const NH3F = makeScale([
+  [0, 100, 180, 110, 0], [2, 130, 205, 130, 190], [10, 190, 230, 110, 220],
+  [30, 240, 210, 70, 230], [80, 230, 130, 50, 238],
+]);
+export const SMOKE = makeScale([
+  [0, 90, 90, 100, 0], [2, 130, 130, 145, 190], [10, 175, 160, 180, 220],
+  [30, 210, 150, 190, 230], [100, 235, 90, 160, 238], [300, 180, 30, 120, 244],
+]);
+export const NIF = makeScale([
+  [0, 90, 160, 180, 0], [1, 120, 195, 205, 190], [5, 90, 210, 190, 220],
+  [15, 240, 220, 90, 230], [40, 230, 120, 50, 238],
+]);
+
 export const COLORMAPS = {
   wind: WIND, temp: TEMP, msl: MSL, precip: PRECIP, cloud: CLOUD, rh: RH,
   feels: TEMP, dew: DEW, ptype: PTYPE, cape: CAPE, snow: SNOWCM, vis: VIS,
@@ -270,4 +297,5 @@ export const COLORMAPS = {
   wetbulb: TEMP, sst: SST, pm25: PM25, no2: NO2, o3: O3, so2: SO2,
   swvh: WAVES, swvp: WPER, wwh: WAVES, wwp: WPER, wve: WENERGY,
   pm10: PM25, uv: UVI, fog: FOG, paccu: PACCU, fire: FIRE, wpd: WPD, ssta: SSTA,
+  dust: DUST, so4f: SO4F, nh3f: NH3F, ocf: SMOKE, bcf: SMOKE, nif: NIF, co2f: CO2F,
 };

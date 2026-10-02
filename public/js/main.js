@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, gphCmap } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, gphCmap } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -63,6 +63,16 @@ const ICONS = {
   wpd: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 21v-8.2M12 12.8 5.8 9.2M12 12.8l6.2-3.6M12 12.8V4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12.8" r="1.5" fill="currentColor"/></svg>',
   ssta: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 16.5c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 10.5V5.2a2 2 0 0 1 4 0v5.3a3 3 0 1 1-4 0z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 13.6v-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".8"/></svg>',
   aurora: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 14c2-5.5 3.6-5.5 5.5 0s3.6 5.5 5.5 0 3.4-5.2 7 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4.5 19c1.8-4 3.2-4 5 0s3.2 4 5 0 2.8-3.8 5.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>',
+  dust: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 15.5c2-2.2 4-2.2 6 0s4 2.2 6 0 3.5-2 7-.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 10.5c1.5-1.6 3-1.6 4.5 0M13.5 8c1.2-1.2 2.6-1.2 3.8 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/><circle cx="7" cy="5.5" r="1" fill="currentColor"/><circle cx="15" cy="4.8" r="0.8" fill="currentColor"/><circle cx="19" cy="11.5" r="1" fill="currentColor"/></svg>',
+  pm25f: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="8" cy="9" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="8" r="1.7" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="15" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="5.5" cy="16.5" r="1" fill="currentColor"/></svg>',
+  pmtot: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="14.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="19" cy="15" r="1.6" fill="currentColor"/><circle cx="5" cy="16" r="1.4" fill="currentColor"/><circle cx="17.5" cy="19.5" r="1" fill="currentColor"/></svg>',
+  so2f: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="9" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16.5" cy="8.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 10.5l2.8-1.2" stroke="currentColor" stroke-width="1.4"/><path d="M17 15.5h4M19 13.5v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/></svg>',
+  so4f: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 8.6V4.5M14.9 13.7l3.6 2M9.1 13.7l-3.6 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  nh3f: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 4.5 5 19h14z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 4.5V10M9.5 12l-3-1.5M14.5 12l3-1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/></svg>',
+  ocf: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M8 20c-2.5-3 1.5-4.5-.5-7.5S6 7 8.5 4M14 20c-2.5-3 1.5-4.5-.5-7.5S12 7 14.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.5 19c-1.5-2 .8-3-.3-5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>',
+  bcf: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 20c-3-3.5 2-5-.5-8S7.5 6.5 10 3.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M15.5 20c-3-3.5 2-5-.5-8s.5-5.5 3-8.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" opacity="0.75"/></svg>',
+  nif: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.5l7 4v9l-7 4-7-4v-9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
+  co2f: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6.5 17.5A4.2 4.2 0 0 1 7 9.2 5.5 5.5 0 0 1 17.6 8a3.9 3.9 0 0 1 .4 7.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M9.5 12.2h3M11 10.7v3M15.5 11h3.4M17.2 9.3v3.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
   gph: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 19c0-5 4-9 8-9s8 4 8 9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 19c0-3 2-5.5 4.5-5.5s4.5 2.5 4.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.75"/><path d="M10.5 19c0-1 .7-1.8 1.5-1.8s1.5.8 1.5 1.8" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/><path d="M3.5 21h17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   precip24: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   precip72: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 12.5a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2 4 4 0 0 1-.2 7.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 16.5h12M8 19.5h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
@@ -111,6 +121,16 @@ const LAYERS = [
   { id: 'fire', label: '火险', unit: 'CBI', cmap: FIRE, variable: 'fire', fmt: (v) => (v >= 97.5 ? '极端' : v >= 90 ? '很高' : v >= 75 ? '高' : v >= 50 ? '中' : v >= 20 ? '低' : '—'), models: ['gfs_raw'] },
   { id: 'wpd', label: '风功率密度', unit: 'W/m²', cmap: WPD, variable: 'wpd', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
   { id: 'ssta', label: '海温距平', unit: '°C', cmap: SSTA, variable: 'ssta', fmt: (v) => (v > 0 ? '+' : '') + (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1)), models: ['ocean_raw'], maskLand: true },
+  { id: 'dust', label: '沙尘', unit: 'µg/m³', cmap: DUST, variable: 'dust', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'pm25f', label: 'PM2.5 场', unit: 'µg/m³', cmap: PM25, variable: 'pm25', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'pmtot', label: 'PM 总量', unit: 'µg/m³', cmap: PM25, variable: 'pmtot', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'so2f', label: 'SO₂ 场', unit: 'µg/m³', cmap: SO2, variable: 'so2', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'so4f', label: '硫酸盐', unit: 'µg/m³', cmap: SO4F, variable: 'so4', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'nh3f', label: '氨', unit: 'µg/m³', cmap: NH3F, variable: 'nh3', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'ocf', label: '有机碳(烟)', unit: 'µg/m³', cmap: SMOKE, variable: 'oc', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'bcf', label: '黑碳', unit: 'µg/m³', cmap: SMOKE, variable: 'bc', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'nif', label: '硝酸盐', unit: 'µg/m³', cmap: NIF, variable: 'ni', fmt: (v) => Math.round(v), models: ['chem_raw'] },
+  { id: 'co2f', label: '二氧化碳', unit: 'ppm', cmap: CO2F, variable: 'co2', fmt: (v) => v.toFixed(1), models: ['chem_raw'] },
   { id: 'radar', label: '雷达', unit: 'dBZ', cmap: RADAR, special: 'radar', fmt: (v) => Math.round(v) },
   { id: 'wvh', label: '波高', unit: 'm', cmap: WAVES, variable: 'wvh', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
   { id: 'wvp', label: '波周期', unit: 's', cmap: WPER, variable: 'wvp', fmt: (v) => v.toFixed(1), models: ['waves_raw'], maskLand: true },
@@ -141,6 +161,7 @@ const GROUPS = [
   { id: 'fire', label: '火险', layers: ['fire'] },
   { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'wwh', 'wwp', 'wve', 'sst', 'ssta'] },
   { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
+  { id: 'chem', label: '空气场', layers: ['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f'] },
 ];
 
 /* 当前图层渲染所需的原始变量(派生图层映射到其数据来源) */
@@ -175,10 +196,12 @@ const LEVEL_LAYERS = new Set(['wind', 'barbs', 'temp', 'humidity', 'gph']);
 // 海浪/海温模式的图层白名单:该模式仅提供各自要素
 const WAVE_ONLY = new Set(['wvh', 'wvp']);
 const OCEAN_ONLY = new Set(['sst', 'ssta']);
+const CHEM_ONLY = new Set(['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f']);
 function layerAvailable(def, model) {
   if (def.models) return def.models.includes(model);
   if (model === 'waves_raw') return WAVE_ONLY.has(def.id);
   if (model === 'ocean_raw') return OCEAN_ONLY.has(def.id);
+  if (model === 'chem_raw') return CHEM_ONLY.has(def.id);
   return true;
 }
 
