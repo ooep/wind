@@ -17,7 +17,7 @@ concurrency:
 jobs:
   ingest-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 240 # 层级包+X 变量后约 3200 条;并发组排队后仍需 ~90 分钟,留足余量
+    timeout-minutes: 360 # 2026-10-03 连续两轮冷摄入(恢复 1.7GB 缓存+w100+雪包+X 变量)在 240min 内未跑完即被 runner 判死;6h 给足余量,僵尸由看门狗 6h 规则兜底
     steps:
       - uses: actions/checkout@v4
 
