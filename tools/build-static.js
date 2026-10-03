@@ -217,6 +217,11 @@ async function main() {
     // 全球粗网格(2.5°):Int16 + 每变量 scale(体积较 Float32 减半,浏览器解码快)
     const coarse = await rawGridOf(-180, -90 + COARSE_DEG, 180, 90, COARSE_DEG);
 
+    // 已知缺变量的模式:上游产品无 GUST(GEFS pgrb2a 无此字段、ECMWF 开放数据无 10fg),
+    // 摄取必失败 → 不发布该变量(前端按"模式不提供"门控),避免全 NaN 被守卫拒绝株连整轮
+    const KNOWN_ABSENT = { gefs_raw: ['gust'], ecmwf_raw: ['gust'], aifs_raw: ['gust'] };
+    for (const vk of KNOWN_ABSENT[model] || []) delete coarse.vars[vk];
+
     // 降水累计窗口:由 PRATE(mm/h)按帧距积分得「过去 24/72h 累计」(帧距不均:逐小时 → 3 小时)
     if (model === 'gfs_raw' && coarse.vars.precip) {
       const bin = Buffer.from(coarse.vars.precip, 'base64');
