@@ -33,7 +33,8 @@ fetch_model() {
   else
     echo "[$model] 产物内容异常,保留仓库内数据"
   fi
-  # 用后即删,控制私有仓库 artifact 存储配额
+  # 用后即删,控制私有仓库 artifact 存储配额;并清临时解包目录(多模型累加会撑爆 runner 磁盘)
+  rm -rf "/tmp/art_$model"
   local aid
   aid=$(gh api "repos/$REPO/actions/runs/$rid/artifacts" --jq ".artifacts[] | select(.name==\"data-$model\") | .id" 2>/dev/null || true)
   if [ -n "$aid" ]; then gh api -X DELETE "repos/$REPO/actions/artifacts/$aid" >/dev/null 2>&1 || true; fi
@@ -72,6 +73,7 @@ fetch_obs() {
     fi
   done
   if [ "$ok" = 1 ]; then echo "[obs] 已更新到 run 产物"; else echo "[obs] 产物内容异常,保留仓库内数据"; fi
+  rm -rf /tmp/art_obs
   local aid
   aid=$(gh api "repos/$REPO/actions/runs/$rid/artifacts" --jq '.artifacts[] | select(.name=="data-obs") | .id' 2>/dev/null || true)
   if [ -n "$aid" ]; then gh api -X DELETE "repos/$REPO/actions/artifacts/$aid" >/dev/null 2>&1 || true; fi
