@@ -1,0 +1,33 @@
+name: data · 看门狗(滞后再烘焙)
+
+# 生产 index.json 各模式起报龄期超阈 → 自动补跑对应数据管道(或补部署)。
+# 背景:GitHub cron 高负载会整程丢弃/延迟(2026-10-03 GFS/GEFS/Wave 当日 cron 均未触发),
+# 数据模式曾静默滞后 1-2 天;阈值体系与 public/status.html 的模式卡片一致。
+on:
+  schedule:
+    - cron: '25 * * * *' # 每小时 25 分,错开各数据管道的整点/半点 cron
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write # dispatch 数据工作流与 deploy-data
+
+concurrency:
+  group: data-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check-and-refill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 检查生产起报龄期,超阈补跑
+        run: node tools/watchdog.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
