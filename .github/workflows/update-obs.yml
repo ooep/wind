@@ -33,6 +33,9 @@ jobs:
           node tools/bake-warnings.js dist/data
           node tools/bake-quakes.js dist/data
           node tools/bake-swx.js dist/data
+          node tools/bake-buoys.js dist/data
+          node tools/bake-rivers.js dist/data
+          node tools/bake-tides.js dist/data
 
       - name: 上传数据 artifact(deploy-data 统一组装部署)
         uses: actions/upload-artifact@v4
@@ -46,4 +49,7 @@ jobs:
             dist/data/warnings
             dist/data/quakes
             dist/data/swx
+            dist/data/buoys
+            dist/data/rivers
+            dist/data/tides
           retention-days: 3

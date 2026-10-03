@@ -19,6 +19,9 @@ import { TropicalLayer } from './layers/tropical.js';
 import { StationLayer } from './layers/stations.js';
 import { WarningsLayer } from './layers/warnings.js';
 import { QuakesLayer } from './layers/quakes.js';
+import { BuoysLayer } from './layers/buoys.js';
+import { RiversLayer } from './layers/rivers.js';
+import { TidesLayer } from './layers/tides.js';
 import { Terminator } from './terminator.js';
 import { Timeline } from './timeline.js';
 import { ForecastPanel, setDegUnit } from './panel.js';
@@ -401,6 +404,9 @@ const firesLayer = new FiresLayer(map, { toast });
 const warnings = new WarningsLayer(map, { toast });
 const quakes = new QuakesLayer(map, { toast });
 const terminator = new Terminator(map);
+const buoys = new BuoysLayer(map, { toast });
+const rivers = new RiversLayer(map, { toast });
+const tides = new TidesLayer(map, { toast });
 const aqi = new AqiLayer(map);
 const barbs = new BarbLayer(map);
 const timeline = new Timeline({ onChange: onTimeChange });
@@ -653,6 +659,12 @@ const OVERLAYS = [
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2 15c2.5 0 3-2.5 5-2.5S9.5 15 12 15s3-2.5 5-2.5 2.5 2.5 5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 13.5V20M12 13.5l4-3.2M12 13.5l-4-3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.75"/></svg>' },
   { id: 'daynight', label: '晨昏线', title: '昼夜晨昏线:按当前时刻计算太阳直射点,深色遮罩显示夜半球(前端实时计算)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.8A8.2 8.2 0 0 1 12 20.2z" fill="currentColor" opacity="0.55"/></svg>' },
+  { id: 'buoys', label: '浮标', title: '全球海洋浮标/站实测(NOAA NDBC,每小时更新):风速着色,弹卡含浪高/水温/气压',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 15c2.5 0 2.5 1.8 5 1.8s2.5-1.8 5-1.8 2.5 1.8 5 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 14V6.5M12 6.5l5-1.6M12 6.5l-5-1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="4.6" r="1.4" fill="currentColor"/></svg>' },
+  { id: 'rivers', label: '大河', title: '全球主要大河径流(GloFAS,日更新):点大小=流量,弹卡看 5 天趋势',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 8c3-2.5 6-2.5 9 0s6 2.5 9 0M3 13c3-2.5 6-2.5 9 0s6 2.5 9 0M3 18c3-2.5 6-2.5 9 0s6 2.5 9 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' },
+  { id: 'tides', label: '潮汐', title: 'NOAA 潮汐站最高/最低潮位预报(美国沿岸,日更新,站点当地时)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 16c2.5 0 2.5-1.8 5-1.8s2.5 1.8 5 1.8 2.5-1.8 5-1.8 2.5 1.8 3 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 12V4.5M12 4.5l3.5 2M12 4.5l-3.5 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/></svg>' },
 ];
 const overlayBtnBox = document.getElementById('overlay-buttons');
 const satChannelWrap = document.getElementById('sat-channel-wrap');
@@ -689,6 +701,9 @@ function toggleOverlay(id, on, silent) {
   else if (id === 'warnings') warnings.show(on);
   else if (id === 'quakes') quakes.show(on);
   else if (id === 'daynight') terminator.show(on);
+  else if (id === 'buoys') buoys.show(on);
+  else if (id === 'rivers') rivers.show(on);
+  else if (id === 'tides') tides.show(on);
   document.getElementById(`ov-${id}`)?.classList.toggle('active', on);
   if (!silent) syncUrl();
 }
@@ -1120,7 +1135,7 @@ window.__currentModelLabel = MODEL_LABELS[state.model];
 window.__state = state; window.__globe = globe; // 调试钩子
 window.__applyGrid = (data, key) => applyGrid(data instanceof Grid ? data : new Grid(data), key || 'debug'); // 调试钩子:可注入格点数据
 window.__app_map = map;
-window.__app_overlays = { lightning, satellite, tropical, stations, airports, aurora, warnings, quakes, terminator, fires: firesLayer }; // 调试钩子:叠加层状态
+window.__app_overlays = { lightning, satellite, tropical, stations, airports, aurora, warnings, quakes, terminator, fires: firesLayer, buoys, rivers, tides }; // 调试钩子:叠加层状态
 /* 静态模式:数据索引就绪后刷新图层置灰与模式胶囊(初始 setLayer 内部已等待索引,
  * URL 指定的模式若不提供该图层,也会由 setLayer 的自动解析修正) */
 ensureStaticAvail().then(() => {

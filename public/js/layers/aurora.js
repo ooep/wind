@@ -60,7 +60,15 @@ export class AuroraLayer {
       if (kp == null) return;
       /* Kp 越高极光越强越南压:0-2 绿(平静) 3-4 黄(活跃) 5+ 红(风暴) */
       const color = kp >= 5 ? '#ff5a5a' : kp >= 3 ? '#ffd24a' : '#7de3a0';
-      this.kpEl.innerHTML = `Kp <span style="color:${color};font-size:14px">${kp.toFixed(1)}</span>`
+      let extra = '';
+      const w = d.wind;
+      if (w && Number.isFinite(w.speed)) {
+        /* Bz 南向(负值)利于极光:≤-5 红、<0 橙、≥0 灰 */
+        const bzColor = w.bz <= -5 ? '#ff5a5a' : w.bz < 0 ? '#f28c28' : '#9aa0a8';
+        extra = ` <span style="opacity:.85">· ${Math.round(w.speed)} km/s</span>`
+          + ` <span style="color:${bzColor}">Bz ${w.bz > 0 ? '+' : ''}${Math.round(w.bz)}</span>`;
+      }
+      this.kpEl.innerHTML = `Kp <span style="color:${color};font-size:14px">${kp.toFixed(1)}</span>${extra}`
         + ' <span style="opacity:.7;font-weight:400">· SWPC</span>';
       this.kpEl.style.display = '';
     } catch { /* 开发模式无烘焙包时静默隐藏 */ }

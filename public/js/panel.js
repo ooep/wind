@@ -25,6 +25,39 @@ function moonPhase(date = new Date()) {
   if (phase < 0) phase += 1;
   return { idx: Math.round(phase * 8) % 8, illum: Math.round((1 - Math.cos(2 * Math.PI * phase)) / 2 * 100) };
 }
+
+/* 月出月落(简化 SunCalc 扫描,30 分钟步长线性内插,误差 ≈1-2 分钟):
+ * 返回未来 24h 内首个升/落时刻(ms);全日在天/全日在地平线下则对应值为 null */
+function moonTimes(date = new Date(), lat = 0, lng = 0) {
+  const rad = Math.PI / 180, dayMs = 86400e3;
+  const toDays = (ms) => ms / dayMs - 10957.5;                 // ms → J2000 起算日
+  const E = rad * 23.4397;
+  const altOf = (ms) => {
+    const d = toDays(ms);
+    const L = rad * (218.316 + 13.176396 * d);
+    const M = rad * (134.963 + 13.064993 * d);
+    const F = rad * (93.272 + 13.229350 * d);
+    const l = L + rad * 6.289 * Math.sin(M);
+    const b = rad * 5.128 * Math.sin(F);
+    /* sin δ = sinβ·cosε + cosβ·sinε·sinλ */
+    const dec = Math.asin(Math.cos(E) * Math.sin(b) + Math.sin(E) * Math.cos(b) * Math.sin(l));
+    const ra = Math.atan2(Math.sin(l) * Math.cos(E) - Math.tan(b) * Math.sin(E), Math.cos(l));
+    const H = rad * (280.16 + 360.9856235 * d) - rad * -lng - ra;
+    const phi = rad * lat;
+    return Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+  };
+  const start = date.getTime();
+  let rise = null, set = null, prev = altOf(start);
+  for (let i = 1; i <= 48; i++) {
+    const ms = start + i * dayMs / 48;
+    const cur = altOf(ms);
+    if (prev < 0 && cur >= 0 && rise == null) rise = ms - (dayMs / 48) * (cur / (cur - prev));
+    if (prev >= 0 && cur < 0 && set == null) set = ms - (dayMs / 48) * (prev / (prev - cur));
+    prev = cur;
+    if (rise != null && set != null) break;
+  }
+  return { rise, set };
+}
 /* 点位预报固定走大气基准模式:海浪/海温/化学/雪包等专用模式无完整大气要素,
  * 点击点位始终展示通用天气面板(海浪详情由「海浪」标签页按需获取,与模式无关) */
 const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
@@ -161,6 +194,12 @@ export class ForecastPanel {
           ? `${Math.floor(dayMs / 3600e3)}h ${p2(Math.round((dayMs % 3600e3) / 60e3))}m` : '—';
         return t('panel.moon', { icon: MOON_ICON[m.idx], name: t('astro.moon' + m.idx), illum: m.illum, day });
       })()}</div>
+      <div class="psun">${(() => {
+        const mt = moonTimes(new Date(), this.lat, this.lon);
+        const f = (ms) => (ms == null ? '—' : fmtHourLocal(ms));
+        return t('panel.moonRS', { rise: f(mt.rise), set: f(mt.set) });
+      })()}</div>
+      <div class="psun" id="panel-pollen" hidden></div>
       <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">${t('panel.src', { model: modelLabel(d, this.dataModel), stale: staleNote })}</div>
     `;
 
@@ -174,6 +213,39 @@ export class ForecastPanel {
     this.loading.style.display = 'none';
     this.content.hidden = false;
     this._renderTab();
+    this._loadPollen();
+  }
+
+  /* 花粉(Open-Meteo 空气质量 API,直连):CAMS 欧洲域,无数据自动隐藏 */
+  async _loadPollen() {
+    const lat = this.lat, lon = this.lon;
+    try {
+      const qs = new URLSearchParams({
+        latitude: lat.toFixed(3), longitude: lon.toFixed(3),
+        hourly: 'birch_pollen,grass_pollen,alder_pollen,mugwort_pollen,olive_pollen,ragweed_pollen',
+        forecast_days: '1', timezone: 'auto',
+      });
+      const r = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?${qs}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      if (this.lat !== lat || this.lon !== lon || !this.isOpen) return;
+      const h = d.hourly;
+      if (!h || !h.time) return;
+      const idx = Math.min(h.time.length - 1, Math.max(0, Math.floor((((Date.now() / 1000) + (d.utc_offset_seconds || 0)) % 86400) / 3600)));
+      const kinds = [['birch', 'birch_pollen'], ['grass', 'grass_pollen'], ['alder', 'alder_pollen'],
+        ['mugwort', 'mugwort_pollen'], ['olive', 'olive_pollen'], ['ragweed', 'ragweed_pollen']];
+      const items = kinds.map(([key, field]) => {
+        const v = h[field]?.[idx];
+        return v == null ? null : { key, v };
+      }).filter(Boolean);
+      const el = document.getElementById('panel-pollen');
+      if (!el) return;
+      if (!items.length) { el.hidden = true; return; }
+      const color = (v) => (v >= 50 ? '#e03131' : v >= 20 ? '#f28c28' : v >= 5 ? '#f5c518' : '#7de3a0');
+      el.innerHTML = `🌸 <b style="font-size:11.5px">${t('panel.pollen')}</b> `
+        + items.map((it) => `<span style="margin:0 4px;white-space:nowrap">${t('pollen.' + it.key)} <b style="color:${color(it.v)}">${it.v}</b></span>`).join('');
+      el.hidden = false;
+    } catch { /* 无网/不支持时静默 */ }
   }
 
   _renderTab() {

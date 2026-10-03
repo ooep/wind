@@ -617,6 +617,9 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
 #overlay-root canvas#warnings-canvas,
 #overlay-root canvas#quakes-canvas,
 #overlay-root canvas#fires-canvas,
+#overlay-root canvas#buoys-canvas,
+#overlay-root canvas#rivers-canvas,
+#overlay-root canvas#tides-canvas,
 #overlay-root canvas#aurora-canvas { z-index: 5; }      /* 事件叠加层:压过天气场与晨昏线 */
 #obs-popup {
   position: absolute; z-index: 10; display: none; pointer-events: none;
