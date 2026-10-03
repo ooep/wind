@@ -114,4 +114,32 @@ function thunderIndex(precip, cape) {
   return precip * (1 + c / 1000);
 }
 
-module.exports = { dewPoint, wetBulb, lclHeight, fineFuelMoisture, icingIndex, catGrid, cumMaxFrames, thunderIndex };
+/* 比湿 kg/kg:Tetens 饱和水汽压 + 水汽分压修正(IVT 大气河用),pHPa 为层气压 hPa */
+function specificHumidity(tC, rh, pHPa) {
+  if (!Number.isFinite(tC) || !Number.isFinite(rh) || !Number.isFinite(pHPa) || pHPa <= 0) return NaN;
+  const es = 6.112 * Math.exp((17.62 * tC) / (243.12 + tC));
+  const e = Math.min(Math.max(rh, 0), 100) / 100 * es;
+  return (0.622 * e) / Math.max(pHPa - 0.622 * e, 1);
+}
+
+/* IVT 大气河逐层向量累加(kg/(m·s)):accU/accV 为地面包同尺寸累加器,
+ * w = q·Δp(g 为重力加速度);NaN 逐点安全,层缺测的贡献自然跳过。 */
+function ivtAdd(accU, accV, u, v, tC, rh, pHPa, dpHPa) {
+  if (!(dpHPa > 0)) return;
+  for (let i = 0; i < u.length; i++) {
+    const q = specificHumidity(tC[i], rh[i], pHPa);
+    if (!Number.isFinite(q) || !Number.isFinite(u[i]) || !Number.isFinite(v[i])) continue;
+    const w = (q * dpHPa * 100) / 9.80665; // hPa → Pa
+    accU[i] += u[i] * w;
+    accV[i] += v[i] * w;
+  }
+}
+
+/* IVT 向量幅值(kg/(m·s)) */
+function ivtMagnitude(accU, accV) {
+  const out = new Float32Array(accU.length);
+  for (let i = 0; i < out.length; i++) out[i] = Math.hypot(accU[i], accV[i]);
+  return out;
+}
+
+module.exports = { dewPoint, wetBulb, lclHeight, fineFuelMoisture, icingIndex, catGrid, cumMaxFrames, thunderIndex, specificHumidity, ivtAdd, ivtMagnitude };

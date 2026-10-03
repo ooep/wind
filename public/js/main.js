@@ -122,6 +122,10 @@ ICONS.chl = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 15c2.
 ICONS.currents = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 9.5c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.4-2 5.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2.5 15c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.65"/><path d="M14 15h6.5m0 0-2.3-2.3M20.5 15l-2.3 2.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 ICONS.thunder = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 13a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2A4 4 0 0 1 17 13z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12.5 12 9.5 17h4l-3 5.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
 ICONS.ozone = ICONS.o3;
+ICONS.ssh = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 16c3-2.5 6-2.5 9 0s6 2.5 9 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 12V4.5M12 4.5 9.2 7.3M12 4.5l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ICONS.salt = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.5s4.5 5 4.5 8.2a4.5 4.5 0 0 1-9 0c0-3.2 4.5-8.2 4.5-8.2z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="10.2" cy="12.2" r="0.95" fill="currentColor"/><circle cx="13.8" cy="13.6" r="0.95" fill="currentColor"/><circle cx="12.6" cy="10.4" r="0.8" fill="currentColor"/></svg>';
+ICONS.fzra = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 3.8s3.6 4 3.6 6.6a3.6 3.6 0 0 1-7.2 0C5.4 7.8 9 3.8 9 3.8z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M17 13.2v6.6M14.7 14.5l4.6 4M19.3 14.5l-4.6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+ICONS.ivt = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 8.5h13.5M16.5 8.5l-3.2-3.2M16.5 8.5l-3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 15.5h9.5M12.5 15.5l-2.8-2.8M12.5 15.5l-2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.65"/></svg>';
 
 const LAYERS = [
   { id: 'wind', label: '风场', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'wind', fmt: (v) => String(Math.round(convV('wind', v))) },
@@ -151,6 +155,7 @@ const LAYERS = [
   { id: 'precip24', label: '降水·24h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip24', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'precip72', label: '降水·72h', unit: 'mm', cat: 'precip', cmap: PACCU, variable: 'precip72', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'ptype', label: '相态', unit: '', cmap: PTYPE, variable: 'ptype', fmt: (v) => ta('ptypelv')[Math.round(v)] || '' },
+  { id: 'fzra', label: '冻雨', unit: '', cmap: FZRA, variable: 'ptype', fmt: (v) => (v >= 1.5 && v < 3 ? (ta('ptypelv')[2] || '冻雨') : '—'), models: ['gfs_raw'] },
   { id: 'vis', label: '能见度', unit: 'km', cmap: VIS, variable: 'vis', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'snow', label: '积雪', unit: 'cm', cmap: SNOWCM, variable: 'snowd', fmt: (v) => Math.round(v), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
   { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
@@ -158,6 +163,7 @@ const LAYERS = [
   { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'thunder', label: '雷暴复合', unit: 'mm/h', cmap: THUNDER, variable: 'thunder', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
+  { id: 'ivt', label: '大气河 IVT', unit: 'kg/(m·s)', cmap: IVT, variable: 'ivt', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
   { id: 'extprob', label: '极端天气概率', unit: '%', cmap: EXTPROB, variable: 'extprob', fmt: (v) => String(Math.round(v)), models: ['gefs_raw'] },
   { id: 'pressure', label: '气压', unit: 'hPa', cat: 'pressure', cmap: MSL, variable: 'msl', fmt: (v) => fmtPresStr(v), isobars: true },
   { id: 'gph', label: '位势高度', unit: 'm', cmap: gphCmap(500), variable: 'h', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'], levels: true, isolines: true },
@@ -167,6 +173,8 @@ const LAYERS = [
   { id: 'ffmc', label: '可燃物含水率', unit: '%', cmap: FFMC, variable: 'ffmc', fmt: (v) => (v >= 25 ? t('ffmc.wet') : v >= 16 ? t('ffmc.ok') : v >= 10 ? t('ffmc.dry') : t('ffmc.vdry')), models: ['gfs_raw'] },
   { id: 'wpd', label: '风功率密度', unit: 'W/m²', cmap: WPD, variable: 'wpd', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
   { id: 'ssta', label: '海温距平', unit: '°C', cmap: SSTA, variable: 'ssta', fmt: (v) => (v > 0 ? '+' : '') + (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1)), models: ['ocean_raw'], maskLand: true },
+  { id: 'ssh', label: '海面高度', unit: 'm', cmap: SSH, variable: 'ssh', fmt: (v) => (v > 0 ? '+' : '') + v.toFixed(2), models: ['currents_raw'], maskLand: true },
+  { id: 'salt', label: '盐度', unit: 'PSU', cmap: SALT, variable: 'salt', fmt: (v) => v.toFixed(2), models: ['currents_raw'], maskLand: true },
   { id: 'currents', label: '海流', unit: 'm/s', cat: 'wind', cmap: CUR, variable: 'cur', fmt: (v) => String(Math.round(convV('wind', v) * 10) / 10), models: ['currents_raw'], maskLand: true },
   { id: 'dust', label: '沙尘', unit: 'µg/m³', cmap: DUST, variable: 'dust', fmt: (v) => Math.round(v), models: ['chem_raw'] },
   { id: 'pm25f', label: 'PM2.5 场', unit: 'µg/m³', cmap: PM25, variable: 'pm25', fmt: (v) => Math.round(v), models: ['chem_raw'] },
@@ -240,13 +248,13 @@ const GROUPS = [
   { id: 'wind', label: '风', layers: ['wind', 'wind100', 'gust', 'gustmax', 'barbs', 'wpd'] },
   { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl'] },
   { id: 'sun', label: '太阳', layers: ['solar'] },
-  { id: 'cloud', label: '云雨', layers: ['cloud', 'cloudbase', 'cloudtop', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
+  { id: 'cloud', label: '云雨', layers: ['cloud', 'cloudbase', 'cloudtop', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'fzra', 'vis'] },
   { id: 'aviation', label: '航空', layers: ['icing', 'cat', 'thermals'] },
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
-  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'thunder', 'pwat', 'extprob', 'pressure', 'gph'] },
+  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'thunder', 'pwat', 'ivt', 'extprob', 'pressure', 'gph'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
   { id: 'fire', label: '火险', layers: ['fire', 'ffmc'] },
-  { id: 'ocean', label: '海洋', layers: ['currents', 'sst', 'ssta', 'wvh', 'wvp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p', 'wwh', 'wwp', 'wve'] },
+  { id: 'ocean', label: '海洋', layers: ['currents', 'sst', 'ssta', 'ssh', 'salt', 'wvh', 'wvp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p', 'wwh', 'wwp', 'wve'] },
   { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv', 'ozone'] },
   { id: 'chem', label: '空气场', layers: ['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f', 'cof'] },
 ];
@@ -666,7 +674,7 @@ const OVERLAYS = [
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 15c2.5 0 2.5 1.8 5 1.8s2.5-1.8 5-1.8 2.5 1.8 5 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 14V6.5M12 6.5l5-1.6M12 6.5l-5-1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="4.6" r="1.4" fill="currentColor"/></svg>' },
   { id: 'rivers', label: '大河', title: '全球主要大河径流(GloFAS,日更新):点大小=流量,弹卡看 5 天趋势',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 8c3-2.5 6-2.5 9 0s6 2.5 9 0M3 13c3-2.5 6-2.5 9 0s6 2.5 9 0M3 18c3-2.5 6-2.5 9 0s6 2.5 9 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' },
-  { id: 'tides', label: '潮汐', title: 'NOAA 潮汐站最高/最低潮位预报(美国沿岸,日更新,站点当地时)',
+  { id: 'tides', label: '潮汐', title: '潮汐:NOAA 潮汐站最高/最低潮位预报(美国沿岸)+ 全球验潮站实测(UHSLC,逐时),日更新',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 16c2.5 0 2.5-1.8 5-1.8s2.5 1.8 5 1.8 2.5-1.8 5-1.8 2.5 1.8 3 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 12V4.5M12 4.5l3.5 2M12 4.5l-3.5 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/></svg>' },
 ];
 const overlayBtnBox = document.getElementById('overlay-buttons');

@@ -87,6 +87,7 @@ const ZH_CN = {
   'layer.gustmax': '最大阵风·过程', 'layer.solar': '太阳辐射', 'layer.icing': '积冰风险', 'layer.cat': '晴空湍流',
   'layer.thermals': '热气流·边界层顶', 'layer.cloudbase': '云底高度', 'layer.cloudtop': '云顶高度',
   'layer.extprob': '极端天气概率', 'layer.ffmc': '可燃物含水率', 'layer.cof': '一氧化碳',
+  'layer.ssh': '海面高度', 'layer.salt': '盐度', 'layer.fzra': '冻雨', 'layer.ivt': '大气河 IVT',
   'layer.sw2h': '涌浪2·高度', 'layer.sw2p': '涌浪2·周期', 'layer.sw3h': '涌浪3·高度', 'layer.sw3p': '涌浪3·周期',
   'group.satobs': '卫星观测', 'group.sun': '太阳', 'group.aviation': '航空',
   'fireConf': ['低', '中', '高'],

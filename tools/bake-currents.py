@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 HYCOM 海流烘焙:HYCOM GLBy0.08 "latest" FMRC 集合(tds.hycom.org,零注册 OPeNDAP)
-经 pydap 服务端 stride 降采样读取表面流 u/v → 最近邻重排到规则经纬网格 → per-var 静态包。
+经 pydap 服务端 stride 降采样读取表面流 u/v、海面高度 surf_el、海表盐度 salinity
+→ 最近邻重排到规则经纬网格 → per-var 静态包。
 
 用法:
   python3 tools/bake-currents.py dist/data                       # 生产:0.5° 最近 8 个 12:00 帧
   python3 tools/bake-currents.py dist/data --deg 1 --max-frames 2  # 仓库 bootstrap 轻量包
-产物:currents_raw/<YYYYMMDD>-12/meta.json + v_u.json + v_v.json + v_cur.json
-说明:陆地/海底为缺测(HYCOM 填充值)→ NaN(-32768);cur = hypot(u, v)。
+产物:currents_raw/<YYYYMMDD>-12/meta.json + v_u/v_v/v_cur/v_ssh/v_salt.json
+说明:陆地/海底为缺测(HYCOM 填充值)→ NaN(-32768);cur = hypot(u, v);
+     u/v/cur 失败判死,ssh/salt 为增强变量(读不到则本轮不发布,不株连海流)。
 """
 import base64
 import json
@@ -29,14 +31,16 @@ URL = "https://tds.hycom.org/thredds/dodsC/GLBy0.08/latest"
 SCALE = 100  # 0.01 m/s 量化
 
 
-def read_strided(var, ti, s_lat, s_lon, tries=3):
-    """单帧表面流,服务端 stride 读取(HYCOM 缺测为填充值,统一清洗为 NaN)"""
+def read_strided(var, ti, s_lat, s_lon, lo=-10.0, hi=10.0, tries=3, with_depth=True):
+    """单帧变量,服务端 stride 读取;范围外(HYCOM 缺测填充 -30000/9e36 等)清洗为 NaN。
+    with_depth=False 用于无深度维的二维变量(如 surf_el)。"""
     last = None
     for i in range(tries):
         try:
-            a = np.asarray(var[ti, 0, ::s_lat, ::s_lon].data, dtype=np.float64)
+            sl = var[ti, 0, ::s_lat, ::s_lon] if with_depth else var[ti, ::s_lat, ::s_lon]
+            a = np.asarray(sl.data, dtype=np.float64)
             a = a.reshape(a.shape[-2], a.shape[-1])  # pydap 保留标量维(time/depth)→ 收成 2D
-            a[(a < -10) | (a > 10)] = np.nan  # 缺测填充(HYCOM 各版本 -30000/9e36 等)一律视为无效
+            a[(a < lo) | (a > hi)] = np.nan
             return a
         except Exception as e:
             last = e
@@ -94,6 +98,7 @@ def main():
 
     u_var, v_var = ds["water_u"], ds["water_v"]
     frames_u, frames_v, times = [], [], []
+    frames_ssh, frames_salt = [], []   # 增强变量:失败不株连
     for h in picks:
         ti = int(np.where(hours == h)[0][0])
         ts = origin + timedelta(hours=float(h))
@@ -106,6 +111,15 @@ def main():
         frames_u.append(u)
         frames_v.append(v)
         times.append(ts.strftime("%Y-%m-%dT%H:00"))
+        for name, frames, var, lo, hi, wd in (
+            ("ssh", frames_ssh, ds["surf_el"], -3.0, 3.0, False),
+            ("salt", frames_salt, ds["salinity"], 25.0, 41.0, True),
+        ):
+            try:
+                a = read_strided(var, ti, 12, 6, lo=lo, hi=hi, with_depth=wd)
+                frames.append(remap(a, s_lat, s_lon, tg_lat, tg_lon))
+            except Exception as e:
+                print(f"  [currents] {ts:%H:%M}Z {name} 读取失败(增强变量,跳过): {e}")
         spd = np.hypot(u, v)
         print(f"  [currents] {ts:%Y-%m-%d %H:%M}Z 流速 {np.nanmin(spd):.2f}~{np.nanpercentile(spd, 99):.2f} m/s")
 
@@ -123,10 +137,15 @@ def main():
             "u": {"scale": SCALE, "file": "v_u.json"},
             "v": {"scale": SCALE, "file": "v_v.json"},
             "cur": {"scale": SCALE, "file": "v_cur.json"},
+            **({"ssh": {"scale": 100, "file": "v_ssh.json"}} if len(frames_ssh) == len(picks) else {}),
+            **({"salt": {"scale": 100, "file": "v_salt.json"}} if len(frames_salt) == len(picks) else {}),
         },
     }
     total = 0
-    for vk, frames in (("u", frames_u), ("v", frames_v), ("cur", [np.hypot(a, b) for a, b in zip(frames_u, frames_v)])):
+    for vk, frames in (("u", frames_u), ("v", frames_v), ("cur", [np.hypot(a, b) for a, b in zip(frames_u, frames_v)]),
+                       ("ssh", frames_ssh), ("salt", frames_salt)):
+        if len(frames) != len(picks):
+            continue  # 增强变量整轮失败:meta 里已不声明,前端按模式缺变量门控
         stack = np.stack(frames)
         finite = np.isfinite(stack).sum() / stack.size
         if finite < 0.05:

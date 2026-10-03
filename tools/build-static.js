@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const gfs = require('../server/gfs');
 const waves = require('../server/waves');
-const { icingIndex, catGrid, thunderIndex } = require('../server/derive');
+const { icingIndex, catGrid, thunderIndex, ivtAdd, ivtMagnitude } = require('../server/derive');
 
 function arg(name, dflt) {
   const i = process.argv.indexOf('--' + name);
@@ -396,6 +396,17 @@ async function main() {
       const icing = new Float32Array(P * nPts).fill(NaN);
       const cloudtop = new Float32Array(P * nPts).fill(NaN);
       const cat = new Float32Array(P * nPts).fill(NaN);
+      /* IVT 大气河:925-300 hPa 逐层向量累加 q·V·Δp/g;底层 slab 厚度用海平面气压近似
+       * (缺 msl 按 37.5 hPa),中间层缺测的 gap 厚度封顶 200 hPa 防止单层超权 */
+      const ivtU = new Float32Array(P * nPts);
+      const ivtV = new Float32Array(P * nPts);
+      let ivtLastP = null, ivtLevelsUsed = 0;
+      const IVT_LEVELS = new Set([925, 850, 700, 500, 300]);
+      const mslF32 = (() => {
+        if (!coarse.vars.msl) return null;
+        const b = Buffer.from(coarse.vars.msl, 'base64');
+        return new Float32Array(b.buffer, b.byteOffset, b.length / 4);
+      })();
       let prev = null; // 上一层的 u/v/h(Float32),供 CAT 层对计算
       let prevLevel = null;
       const ICING_LEVELS = new Set([925, 850, 700, 500]);
@@ -430,6 +441,20 @@ async function main() {
             if (!Number.isFinite(v)) continue;
             icing[i] = Number.isNaN(icing[i]) ? v : Math.max(icing[i], v);
           }
+        }
+        if (IVT_LEVELS.has(level) && cur.u && cur.v && cur.temp && cur.rh) {
+          for (let t = 0; t < P; t++) {
+            const off = t * nPts;
+            for (let p = 0; p < nPts; p++) {
+              const idx = off + p;
+              const dp = ivtLastP === null
+                ? (mslF32 && Number.isFinite(mslF32[idx]) ? Math.max(5, Math.min(150, mslF32[idx] - level)) : 37.5)
+                : Math.min(200, ivtLastP - level);
+              ivtAdd(ivtU, ivtV, cur.u.subarray(idx, idx + 1), cur.v.subarray(idx, idx + 1), cur.temp.subarray(idx, idx + 1), cur.rh.subarray(idx, idx + 1), level, dp);
+            }
+          }
+          ivtLastP = level;
+          ivtLevelsUsed++;
         }
         if (CLOUDTOP_LEVELS.has(level) && cur.rh && cur.h) {
           for (let i = 0; i < cloudtop.length; i++) {
@@ -466,7 +491,15 @@ async function main() {
         console.log(`  气压层 ${level} hPa 完成`);
       }
       /* 跨层派生包:与层级包同一批发布(任一累积器有数据即写) */
-      for (const [vk, arr, scl] of [['icing', icing, 10], ['cat', cat, 100], ['cloudtop', cloudtop, 1]]) {
+      const cross = [['icing', icing, 10], ['cat', cat, 100], ['cloudtop', cloudtop, 1]];
+      if (ivtLevelsUsed) {
+        cross.push(['ivt', ivtMagnitude(ivtU, ivtV), 10]);
+        let ivtPeak = 0;
+        const ivtArr = cross[cross.length - 1][1];
+        for (let i = 0; i < ivtArr.length; i++) if (ivtArr[i] > ivtPeak) ivtPeak = ivtArr[i];
+        console.log(`  IVT 大气河完成(${ivtLevelsUsed} 层,峰值 ${Math.round(ivtPeak)} kg/(m·s))`);
+      }
+      for (const [vk, arr, scl] of cross) {
         if (arr.every(Number.isNaN)) continue;
         guardEmptyData(arr, `${model}.${vk}`);
         const q = new Int16Array(arr.length);

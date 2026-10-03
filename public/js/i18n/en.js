@@ -57,6 +57,7 @@ export default {
   'layer.gustmax': 'Max gust (event)', 'layer.solar': 'Solar radiation', 'layer.icing': 'Icing risk', 'layer.cat': 'Clear-air turbulence',
   'layer.thermals': 'Thermals · BL top', 'layer.cloudbase': 'Cloud base', 'layer.cloudtop': 'Cloud top',
   'layer.extprob': 'Extreme weather prob.', 'layer.ffmc': 'Fuel moisture (FFMC)', 'layer.cof': 'Carbon monoxide',
+  'layer.ssh': 'Sea surface height', 'layer.salt': 'Salinity', 'layer.fzra': 'Freezing rain', 'layer.ivt': 'Atmospheric river IVT',
   'layer.sw2h': 'Swell 2 height', 'layer.sw2p': 'Swell 2 period', 'layer.sw3h': 'Swell 3 height', 'layer.sw3p': 'Swell 3 period',
   'group.satobs': 'Satellite obs', 'group.sun': 'Sun', 'group.aviation': 'Aviation',
   'fireConf': ['Low', 'Medium', 'High'],

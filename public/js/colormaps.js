@@ -337,6 +337,30 @@ export const EXTPROB = makeScale([
   [50, 250, 150, 40, 235], [70, 235, 60, 50, 235], [100, 160, 20, 90, 240],
 ]);
 
+/* 海面高度 m(HYCOM surf_el,相对基准面:深蓝(低)→青→近白→黄→棕(高)) */
+export const SSH = makeScale([
+  [-1.5, 40, 20, 120, 235], [-0.5, 30, 90, 210, 235], [-0.15, 90, 180, 235, 235],
+  [0, 235, 245, 250, 225], [0.15, 250, 235, 150, 235], [0.5, 245, 160, 50, 235],
+  [1.5, 190, 60, 30, 240],
+]);
+/* 海表盐度 PSU(HYCOM:紫(淡水)→蓝→绿→黄→红(高盐,如红海)) */
+export const SALT = makeScale([
+  [28, 70, 30, 130, 235], [31, 40, 100, 210, 235], [33, 30, 170, 220, 235],
+  [34.5, 60, 200, 130, 235], [36, 170, 220, 80, 235], [37.5, 250, 220, 90, 235],
+  [40, 225, 90, 40, 240],
+]);
+/* 大气河 IVT kg/(m·s)(透明(干)→绿→黄→红→紫(极端,~1000+)) */
+export const IVT = makeScale([
+  [0, 240, 248, 245, 0], [50, 200, 235, 190, 220], [150, 110, 210, 120, 235],
+  [300, 250, 230, 90, 238], [450, 245, 150, 40, 240], [600, 225, 60, 40, 242],
+  [800, 160, 30, 130, 245], [1100, 90, 20, 150, 248],
+]);
+/* 冻雨:与 PTYPE 同编码(0 无 1 雨 2 冻雨 3 雪),仅类别 2 着色,其余透明 */
+export const FZRA = makeScale([
+  [0, 0, 0, 0, 0], [1.99, 0, 0, 0, 0], [2, 175, 80, 220, 240], [2.99, 175, 80, 220, 240],
+  [3, 0, 0, 0, 0], [10, 0, 0, 0, 0],
+]);
+
 export const COLORMAPS = {
   wind: WIND, temp: TEMP, msl: MSL, precip: PRECIP, cloud: CLOUD, rh: RH,
   feels: TEMP, dew: DEW, ptype: PTYPE, cape: CAPE, snow: SNOWCM, vis: VIS,
@@ -350,6 +374,7 @@ export const COLORMAPS = {
   solar: SOLAR, cof: COCM, icing: ICING, cat: CATC, ffmc: FFMC, extprob: EXTPROB,
   cloudbase: FRZLVL, cloudtop: FRZLVL, thermals: FRZLVL, gustmax: WIND,
   sw2h: WAVES, sw2p: WPER, sw3h: WAVES, sw3p: WPER,
+  ssh: SSH, salt: SALT, ivt: IVT, fzra: FZRA,
 };
 
 /* ---------- NASA GIBS 卫星观测图层图例(近似官方配色,瓦片本身由 GIBS 官方渲染) ---------- */
