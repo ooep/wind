@@ -50,6 +50,12 @@ async function fetchStations() {
         vis: m.visib || null,
         wx: m.wxString || null,
         c: m.cover || null,
+        f: m.fltCat || null,   // 飞行规则 VFR/MVFR/IFR/LIFR(API 官方分类,机场 FR 层着色用)
+        cb: (() => {           // 最低 BKN/OVC 云底(ft),天花板参考
+          const cs = Array.isArray(m.clouds) ? m.clouds : [];
+          for (const c of cs) if (/BKN|OVC/i.test(c.cover || '') && Number.isFinite(num(c.base))) return num(c.base);
+          return null;
+        })(),
         o: m.obsTime || null,
         n: m.name || null,
         raw: m.rawOb || null,

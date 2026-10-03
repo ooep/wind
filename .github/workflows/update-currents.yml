@@ -1,0 +1,43 @@
+name: data · 海流(日更)
+
+# 海流管道:HYCOM GLBy0.08 "latest" FMRC(tds.hycom.org,零注册 OPeNDAP,
+# 表面流 u/v 1/12°,分析 + 7 天预报,3 小时帧)
+# → pydap 服务端 stride 降采样 → 0.5° 规则网格 per-var 静态包 → artifact(deploy-data 组装部署)。
+# 模式 id:currents_raw(独立于 NWP 引擎,日更一次,时间轴取 12:00 UTC 帧)。
+
+on:
+  schedule:
+    - cron: '45 10 * * *'   # UTC 10:45,交叉于 SST(09:35)之后
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-currents
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install --quiet pydap numpy
+
+      - name: 烘焙海流静态包
+        run: python3 tools/bake-currents.py out/data
+
+      - name: 上传数据产物(deploy-data 工作流统一组装部署,数据不再提交 main)
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-currents_raw
+          path: out/data/
+          retention-days: 3
+          if-no-files-found: error

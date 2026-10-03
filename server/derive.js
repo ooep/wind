@@ -105,4 +105,13 @@ function cumMaxFrames(arr, nFrames, nPts) {
   return out;
 }
 
-module.exports = { dewPoint, wetBulb, lclHeight, fineFuelMoisture, icingIndex, catGrid, cumMaxFrames };
+/* 雷暴复合指数(mm/h):降水强度按 CAPE 加权 —— 无对流时即普通降水,
+ * CAPE 4000 J/kg 时强度 ×5,雷雨区在图上一目了然(诊断量,非官方产品)。 */
+function thunderIndex(precip, cape) {
+  if (!Number.isFinite(precip)) return NaN;
+  if (precip <= 0.05) return 0;
+  const c = Number.isFinite(cape) ? Math.max(0, Math.min(4000, cape)) : 0;
+  return precip * (1 + c / 1000);
+}
+
+module.exports = { dewPoint, wetBulb, lclHeight, fineFuelMoisture, icingIndex, catGrid, cumMaxFrames, thunderIndex };

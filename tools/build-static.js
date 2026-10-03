@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const gfs = require('../server/gfs');
 const waves = require('../server/waves');
-const { icingIndex, catGrid } = require('../server/derive');
+const { icingIndex, catGrid, thunderIndex } = require('../server/derive');
 
 function arg(name, dflt) {
   const i = process.argv.indexOf('--' + name);
@@ -39,7 +39,7 @@ const WANT_TILES = flag('tiles');
 const COARSE = { ni: Math.round(360 / COARSE_DEG), nj: Math.round(180 / COARSE_DEG) + 1, lon0: 0, dlon: COARSE_DEG, lat0: 90, dlat: COARSE_DEG };
 
 /* 变量 scale 直接取引擎的 GRIB 量化配置,保证与管道一致、单处维护 */
-const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10, wpd: 1, ffmc: 10, gustmax: 100, icing: 10, cat: 100, extprob: 10 }; // 烘焙端派生量:降水累计/可燃物含水率 0.1、火险 CBI 0.1、风功率密度 W/m²、过程最大阵风 0.01、积冰 0.1%、CAT 0.01、极端概率 0.1%
+const DERIVED_SCALE = { precip24: 10, precip72: 10, fire: 10, wpd: 1, ffmc: 10, gustmax: 100, icing: 10, cat: 100, extprob: 10, thunder: 10 }; // 烘焙端派生量:降水累计/可燃物含水率 0.1、火险 CBI 0.1、风功率密度 W/m²、过程最大阵风 0.01、积冰 0.1%、CAT 0.01、极端概率 0.1%、雷暴复合 0.1
 function varScale(model, vk) {
   const base = vk.split('@')[0]; // 层级键 u@850 → 取 u 的 scale
   if (model === 'ocean_raw') return (base === 'sst' || base === 'ssta') ? 100 : 1;
@@ -259,6 +259,23 @@ async function main() {
         for (const v of out) if (Number.isFinite(v) && v > peak) peak = v;
         console.log(`  降水累计 ${win}h 完成(峰值 ${peak.toFixed(1)} mm)`);
       }
+    }
+
+    // 雷暴复合:降水强度按 CAPE 加权(CAPE ≥4000 J/kg 时 ×5),雷雨区一目了然(live 端 derive.js 同源)
+    if (model === 'gfs_raw' && coarse.vars.precip && coarse.vars.cape) {
+      const pb = Buffer.from(coarse.vars.precip, 'base64');
+      const PR = new Float32Array(pb.buffer, pb.byteOffset, pb.byteLength / 4);
+      const cb = Buffer.from(coarse.vars.cape, 'base64');
+      const CA = new Float32Array(cb.buffer, cb.byteOffset, cb.byteLength / 4);
+      const out = new Float32Array(PR.length);
+      let peak = 0;
+      for (let i = 0; i < PR.length; i++) {
+        const v = thunderIndex(PR[i], CA[i]);
+        out[i] = v;
+        if (Number.isFinite(v) && v > peak) peak = v;
+      }
+      coarse.vars.thunder = Buffer.from(out.buffer, out.byteOffset, out.byteLength).toString('base64');
+      console.log(`  雷暴复合完成(峰值 ${peak.toFixed(1)} mm/h)`);
     }
 
     // 火险指数 CBI(Chandler Burning Index):仅由 2m 温度 + 相对湿度驱动的天气火险,

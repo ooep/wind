@@ -196,8 +196,8 @@ async function staticGlobalGrid(model, entry) {
   return gridObj;
 }
 
-/* 点位预报固定走大气基准模式:海浪/海温/化学/雪包等专用模式无完整大气要素 */
-const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
+/* 点位预报固定走大气基准模式:海浪/海温/海流/化学/雪包等专用模式无完整大气要素 */
+const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', currents_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
 
 /* 静态模式:点预报由本地格点插值合成(与 /api/point 响应同构);needs 可精简(对比 tab 只需温/风) */
 async function staticPoint(lat, lon, model, needs) {

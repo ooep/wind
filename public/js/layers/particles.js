@@ -9,10 +9,12 @@ import { LAKE_BOXES } from '../lakemasks.js';
 const MAX_SPEED_PX = 5.5;   // 单帧位移上限(px),防止视觉过快
 const BASE_K = 0.055;        // z=2 时的 px/(m/s·帧) 系数
 
-/* 粒子动效档位:default=风场;wave=海浪(短拖尾、低密度,柔缓的涌浪流动) */
+/* 粒子动效档位:default=风场;wave=海浪;current=海流(慢速场,位移按 mult 放大)。
+ * landGate=true 的档位用外推场延续到海岸线,并以 land-50m 位图做门控 —— 岸外全流动、岸内零粒子。 */
 const PROFILES = {
   default: { fade: 0.945, lineWidth: 1.4, ttlMin: 40, ttlVar: 110, density: 1 },
-  wave: { fade: 0.928, lineWidth: 1.3, ttlMin: 32, ttlVar: 70, density: 0.6 },  // 短拖尾、低密度
+  wave: { fade: 0.928, lineWidth: 1.3, ttlMin: 32, ttlVar: 70, density: 0.6, mult: 1, landGate: true },
+  current: { fade: 0.962, lineWidth: 1.5, ttlMin: 55, ttlVar: 85, density: 0.7, mult: 7, landGate: true },
 };
 
 export class ParticleLayer {
@@ -137,12 +139,12 @@ export class ParticleLayer {
 
   setFrame(fr) { this.fr = fr; }
 
-  /* 粒子着色:默认按 u/v 风速;海浪等图层可指定标量变量(如波高)。
-   * 海浪模式(wvh 着色)自动切换 wave 动效档(短拖尾低密度)。 */
+  /* 粒子着色:默认按 u/v 风速;海浪按波高、海流按流速等标量变量着色。
+   * 着色变量决定动效档:wvh→wave(海浪)、cur→current(海流),其余 default。 */
   setColorVar(varName, cmap) {
     this.colorVar = varName || null;
     this.colorCmap = cmap || null;
-    this.setProfile(varName === 'wvh' ? 'wave' : 'default');
+    this.setProfile(varName === 'wvh' ? 'wave' : varName === 'cur' ? 'current' : 'default');
   }
 
   setEnabled(on) {
@@ -184,7 +186,7 @@ export class ParticleLayer {
     ctx.globalCompositeOperation = 'source-over';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const k = Math.min(BASE_K * Math.pow(2, view.z - 2), MAX_SPEED_PX / 12);
+    const k = Math.min(BASE_K * (this.profile.mult || 1) * Math.pow(2, view.z - 2), MAX_SPEED_PX / 12);
     ctx.lineWidth = this.profile.lineWidth;
     ctx.lineCap = 'round';
 
@@ -195,9 +197,9 @@ export class ParticleLayer {
       }
       const ll = view.containerToLatLng(p.x, p.y);
       let uv = grid.sampleUV(ll.lng, ll.lat, fr);
-      if (!uv && this.profile === PROFILES.wave) uv = grid.sampleUVExt(ll.lng, ll.lat, fr);
+      if (!uv && this.profile.landGate) uv = grid.sampleUVExt(ll.lng, ll.lat, fr);
       if (!uv) { p.age = p.ttl + 1; continue; }
-      if (this.profile === PROFILES.wave && this._isLand(p.x, p.y)) { p.age = p.ttl + 1; continue; }
+      if (this.profile.landGate && this._isLand(p.x, p.y)) { p.age = p.ttl + 1; continue; }
       const [u, v] = uv;
       let dx = u * k, dy = -v * k;
       const mag = Math.hypot(dx, dy);
@@ -208,7 +210,7 @@ export class ParticleLayer {
       // 略微提亮,保证深色底图上可见
       const r = Math.min(255, c[0] + 45), g = Math.min(255, c[1] + 45), b = Math.min(255, c[2] + 45);
       const nx = p.x + dx, ny = p.y + dy;
-      if (this.profile === PROFILES.wave && this._isLand(nx, ny)) { p.age = p.ttl + 1; continue; }
+      if (this.profile.landGate && this._isLand(nx, ny)) { p.age = p.ttl + 1; continue; }
       ctx.strokeStyle = `rgba(${r},${g},${b},0.9)`;
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);

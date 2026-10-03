@@ -1,6 +1,6 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, SOLAR, COCM, ICING, CATC, FFMC, EXTPROB, gphCmap } from './colormaps.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, SOLAR, COCM, ICING, CATC, FFMC, EXTPROB, gphCmap, CUR, THUNDER, GO3 } from './colormaps.js';
 import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel, staticAvailReady, isStatic } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
@@ -112,6 +112,9 @@ ICONS.extprob = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.
 ICONS.cof = '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="9" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16.5" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.75"/><path d="M13.2 12h1" stroke="currentColor" stroke-width="1.4" opacity="0.75"/></svg>';
 ICONS.ndvi = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M18.5 4.5C11 5 5.5 9.5 5.5 16c0 1.2.3 2.3.8 3.2C7.5 13 12 8.5 17.5 6.5c-4.5 3-8 7.5-9.3 13 .9.4 1.9.6 3 .6 6 0 9.3-5.5 7.3-15.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 ICONS.chl = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 15c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.6-1.8 4.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="6.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="10.5" r="0.9" fill="currentColor"/><circle cx="18.5" cy="9.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+ICONS.currents = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2.5 9.5c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0 3.4-2 5.6-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2.5 15c2.4-2.2 4.8-2.2 7.2 0s4.8 2.2 7.2 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.65"/><path d="M14 15h6.5m0 0-2.3-2.3M20.5 15l-2.3 2.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+ICONS.thunder = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 13a4.5 4.5 0 0 1-.5-9 5.5 5.5 0 0 1 10.7 1.2A4 4 0 0 1 17 13z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12.5 12 9.5 17h4l-3 5.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+ICONS.ozone = ICONS.o3;
 
 const LAYERS = [
   { id: 'wind', label: '风场', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'wind', fmt: (v) => String(Math.round(convV('wind', v))) },
@@ -145,6 +148,7 @@ const LAYERS = [
   { id: 'newsnow', label: '新雪', unit: 'cm', cmap: NEWSNOW, variable: 'newsnow', fmt: (v) => (v < 1 ? v.toFixed(1) : Math.round(v)), models: ['gfs_snow', 'gfs_raw'], autoModel: true },
   { id: 'cape', label: '雷暴 CAPE', unit: 'J/kg', cmap: CAPE, variable: 'cape', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
   { id: 'cin', label: '对流抑制', unit: 'J/kg', cmap: CIN, variable: 'cin', fmt: (v) => Math.round(v), models: ['gfs_raw'] },
+  { id: 'thunder', label: '雷暴复合', unit: 'mm/h', cmap: THUNDER, variable: 'thunder', fmt: (v) => fmtPrecipStr(v), models: ['gfs_raw'] },
   { id: 'pwat', label: '可降水', unit: 'mm', cmap: PWAT, variable: 'pwat', fmt: (v) => (v < 10 ? v.toFixed(1) : Math.round(v)), models: ['gfs_raw'] },
   { id: 'extprob', label: '极端天气概率', unit: '%', cmap: EXTPROB, variable: 'extprob', fmt: (v) => String(Math.round(v)), models: ['gefs_raw'] },
   { id: 'pressure', label: '气压', unit: 'hPa', cat: 'pressure', cmap: MSL, variable: 'msl', fmt: (v) => fmtPresStr(v), isobars: true },
@@ -155,6 +159,7 @@ const LAYERS = [
   { id: 'ffmc', label: '可燃物含水率', unit: '%', cmap: FFMC, variable: 'ffmc', fmt: (v) => (v >= 25 ? t('ffmc.wet') : v >= 16 ? t('ffmc.ok') : v >= 10 ? t('ffmc.dry') : t('ffmc.vdry')), models: ['gfs_raw'] },
   { id: 'wpd', label: '风功率密度', unit: 'W/m²', cmap: WPD, variable: 'wpd', fmt: (v) => String(Math.round(v)), models: ['gfs_raw'] },
   { id: 'ssta', label: '海温距平', unit: '°C', cmap: SSTA, variable: 'ssta', fmt: (v) => (v > 0 ? '+' : '') + (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1)), models: ['ocean_raw'], maskLand: true },
+  { id: 'currents', label: '海流', unit: 'm/s', cat: 'wind', cmap: CUR, variable: 'cur', fmt: (v) => String(Math.round(convV('wind', v) * 10) / 10), models: ['currents_raw'], maskLand: true },
   { id: 'dust', label: '沙尘', unit: 'µg/m³', cmap: DUST, variable: 'dust', fmt: (v) => Math.round(v), models: ['chem_raw'] },
   { id: 'pm25f', label: 'PM2.5 场', unit: 'µg/m³', cmap: PM25, variable: 'pm25', fmt: (v) => Math.round(v), models: ['chem_raw'] },
   { id: 'pmtot', label: 'PM 总量', unit: 'µg/m³', cmap: PM25, variable: 'pmtot', fmt: (v) => Math.round(v), models: ['chem_raw'] },
@@ -186,6 +191,9 @@ const LAYERS = [
   { id: 'o3', label: '臭氧', unit: 'μg/m³', cmap: O3, special: 'aqi', aqField: 'o3', fmt: (v) => Math.round(v) },
   { id: 'so2', label: '二氧化硫', unit: 'μg/m³', cmap: SO2, special: 'aqi', aqField: 'so2', fmt: (v) => Math.round(v) },
   { id: 'uv', label: 'UV 指数', unit: '', cmap: UVI, special: 'aqi', aqField: 'u', fmt: (v) => (v < 10 ? v.toFixed(1) : String(Math.round(v))) },
+  { id: 'ozone', label: '总柱臭氧', unit: 'DU', cmap: GO3, special: 'gibs',
+    gibs: { gibs: 'OMPS_Ozone_Total_Column', tms: 'GoogleMapsCompatible_Level6', zoom: 6, cadence: 'daily', lag: 1, attr: 'NASA OMPS / GIBS' },
+    fmt: (v) => String(Math.round(v)) },
   /* NASA GIBS 卫星观测(零注册直连瓦片,官方预渲染配色) */
   { id: 'fires', label: '活跃火点', unit: '', special: 'fires', cmap: FIRECONF, fmt: (v) => ta('fireConf')[Math.round(v)] || '' },
   { id: 'imerg', label: '卫星降水', unit: 'mm/h', cat: 'precip', cmap: IMERRG, special: 'gibs',
@@ -227,11 +235,11 @@ const GROUPS = [
   { id: 'cloud', label: '云雨', layers: ['cloud', 'cloudbase', 'cloudtop', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
   { id: 'aviation', label: '航空', layers: ['icing', 'cat', 'thermals'] },
   { id: 'snow', label: '雪', layers: ['snow', 'newsnow'] },
-  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'pwat', 'extprob', 'pressure', 'gph'] },
+  { id: 'conv', label: '对流气压', layers: ['cape', 'cin', 'thunder', 'pwat', 'extprob', 'pressure', 'gph'] },
   { id: 'ground', label: '土壤', layers: ['soilw', 'soilt'] },
   { id: 'fire', label: '火险', layers: ['fire', 'ffmc'] },
-  { id: 'ocean', label: '海洋', layers: ['wvh', 'wvp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p', 'wwh', 'wwp', 'wve', 'sst', 'ssta'] },
-  { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv'] },
+  { id: 'ocean', label: '海洋', layers: ['currents', 'sst', 'ssta', 'wvh', 'wvp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p', 'wwh', 'wwp', 'wve'] },
+  { id: 'air', label: '空气', layers: ['aqi', 'pm25', 'pm10', 'no2', 'o3', 'so2', 'uv', 'ozone'] },
   { id: 'chem', label: '空气场', layers: ['dust', 'pm25f', 'pmtot', 'so2f', 'so4f', 'nh3f', 'ocf', 'bcf', 'nif', 'co2f', 'cof'] },
 ];
 
@@ -247,6 +255,12 @@ function varNeeds(def) {
   return M[def.variable] || [def.variable];
 }
 const layerById = (id) => LAYERS.find((l) => l.id === id);
+
+/* 粒子样式随数据模式联动:海浪按波高(wave 档)、海流按流速(current 档),其余按风速着色 */
+function syncParticleStyle() {
+  const mode = state.model === 'waves_raw' ? 'wvh' : state.model === 'currents_raw' ? 'cur' : null;
+  particles.setColorVar(mode, mode === 'wvh' ? WAVES : mode === 'cur' ? CUR : null);
+}
 
 /* i18n:图层/分组/叠加的 label(含 overlay title)改为按语言取词的 getter —
  * 词典缺键(如后续新增图层)时保留定义处的原标签,不会显示键名 */
@@ -308,7 +322,7 @@ const state = {
   basemap: urlState.bm || 'vector',
   level: num(urlState.lv, 0),
   opacity: Math.min(1, Math.max(0.35, num(urlState.op, 100) / 100)),
-  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations', 'snowcover', 'aurora'].includes(x))),
+  overlays: new Set(String(urlState.o || '').split(',').filter((x) => ['lightning', 'satellite', 'tropical', 'stations', 'airports', 'snowcover', 'aurora'].includes(x))),
   grid: null,
   gridKey: '',
   fetchingKey: '',
@@ -377,6 +391,7 @@ const lightning = new LightningLayer(map);
 const aurora = new AuroraLayer(map);
 const tropical = new TropicalLayer(map);
 const stations = new StationLayer(map);
+const airports = new StationLayer(map, { fr: true });
 const snowCover = new SnowCoverLayer(map);
 const gibs = new GibsLayer(map);
 const firesLayer = new FiresLayer(map, { toast });
@@ -572,9 +587,8 @@ async function setLayer(id, silent = false) {
   } else {
     scalar.show(false);
   }
-  /* 粒子着色:海浪模式按波高,其余按风速 */
-  particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
-  particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');
+  /* 粒子着色:随数据模式联动(海浪波高 / 海流流速 / 其余风速) */
+  syncParticleStyle();
   /* 等值线:气压层用等压线,位势高度层用等高线(间距随层变化) */
   const isoCfg = def.isobars ? { var: 'msl', interval: 4, major: 3 }
     : def.isolines ? { var: def.variable, interval: GPH_INT[state.level || 500], major: 5 } : null;
@@ -621,6 +635,8 @@ const OVERLAYS = [
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3.4" fill="currentColor"/><path d="M12 4a8 8 0 0 1 7 4.2M12 20a8 8 0 0 1-7-4.2M5.6 8.6A8 8 0 0 1 12 4M18.4 15.4A8 8 0 0 1 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
   { id: 'stations', label: '站点', title: '全球机场/气象站 METAR 实测(NOAA,每小时更新)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M6 6a8.5 8.5 0 0 0 0 12M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>' },
+  { id: 'airports', label: '机场', title: '全球机场飞行规则(Flight Rules):VFR 绿 / MVFR 蓝 / IFR 橙 / LIFR 红 — METAR 实测(NOAA,每小时更新)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2.8c.9 0 1.6.7 1.6 1.6v4.4l6.6 3.9v1.9l-6.6-2v4l2.5 1.8v1.5L12 18.9l-4.1 1v-1.5l2.5-1.8v-4l-6.6 2v-1.9l6.6-3.9V4.4c0-.9.7-1.6 1.6-1.6z" fill="currentColor"/></svg>' },
   { id: 'snowcover', label: '雪盖', title: '雪盖观测:NASA VIIRS NDSI 日产品(卫星反演雪盖范围,每日更新)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3v18M5.5 6.2l13 11.6M5.5 17.8l13-11.6M12 6.5l-1.8-1.8M12 6.5l1.8-1.8M12 17.5l-1.8 1.8M12 17.5l1.8 1.8M5 12H3.2M5 12l-1.3 1.4M5 12 3.7 10.6M19 12h1.8M19 12l1.3 1.4M19 12l-1.3-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' },
   { id: 'aurora', label: '极光', title: 'NOAA SWPC OVATION 极光概率(未来 30-90 分钟,每 30 分钟更新)',
@@ -655,6 +671,7 @@ function toggleOverlay(id, on, silent) {
   } else if (id === 'lightning') lightning.show(on);
   else if (id === 'tropical') tropical.show(on);
   else if (id === 'stations') stations.show(on);
+  else if (id === 'airports') airports.show(on);
   else if (id === 'snowcover') snowCover.show(on);
   else if (id === 'aurora') aurora.show(on);
   document.getElementById(`ov-${id}`)?.classList.toggle('active', on);
@@ -859,8 +876,7 @@ document.getElementById('model-select').addEventListener('change', (e) => {
   applyModelCore(m);
   syncUrl();
   hint(t('hint.model', { model: MODEL_SHORT[m] || m }));
-  particles.setColorVar(state.model === 'waves_raw' ? 'wvh' : null, WAVES);
-  particles.setProfile(state.model === 'waves_raw' ? 'wave' : 'default');
+  syncParticleStyle();
   scheduleGridFetch(0);
 });
 document.getElementById('basemap-select').addEventListener('change', (e) => setBasemap(e.target.value));
@@ -1089,7 +1105,7 @@ window.__currentModelLabel = MODEL_LABELS[state.model];
 window.__state = state; window.__globe = globe; // 调试钩子
 window.__applyGrid = (data, key) => applyGrid(data instanceof Grid ? data : new Grid(data), key || 'debug'); // 调试钩子:可注入格点数据
 window.__app_map = map;
-window.__app_overlays = { lightning, satellite, tropical, stations, aurora }; // 调试钩子:叠加层状态
+window.__app_overlays = { lightning, satellite, tropical, stations, airports, aurora }; // 调试钩子:叠加层状态
 /* 静态模式:数据索引就绪后刷新图层置灰与模式胶囊(初始 setLayer 内部已等待索引,
  * URL 指定的模式若不提供该图层,也会由 setLayer 的自动解析修正) */
 ensureStaticAvail().then(() => {

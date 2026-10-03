@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { findMessages, decodeMessage } = require('./grib2');
-const { lclHeight, fineFuelMoisture, cumMaxFrames } = require('./derive');
+const { lclHeight, fineFuelMoisture, cumMaxFrames, thunderIndex } = require('./derive');
 
 const S3 = 'https://noaa-gfs-bdp-pds.s3.amazonaws.com';
 const RES = '0p50';
@@ -542,7 +542,7 @@ function deriveSurfaceGrids(vars, nT, nP) {
     return new Float32Array(b.buffer, b.byteOffset, b.length / 4);
   };
   const enc = (arr) => Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString('base64');
-  const T = f32('temp'), R = f32('rh'), PR = f32('precip'), G = f32('gust');
+  const T = f32('temp'), R = f32('rh'), PR = f32('precip'), G = f32('gust'), CA = f32('cape');
   if (T && R) {
     const base = new Float32Array(nT * nP), fuel = new Float32Array(nT * nP);
     for (let i = 0; i < base.length; i++) {
@@ -553,6 +553,11 @@ function deriveSurfaceGrids(vars, nT, nP) {
     vars.ffmc = enc(fuel);
   }
   if (G) vars.gustmax = enc(cumMaxFrames(G, nT, nP));
+  if (PR && CA) {
+    const th = new Float32Array(nT * nP);
+    for (let i = 0; i < th.length; i++) th[i] = thunderIndex(PR[i], CA[i]);
+    vars.thunder = enc(th);
+  }
 }
 
 /* ---------------- 对外:格点(地面 / 气压层合并) ---------------- */

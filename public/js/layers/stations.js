@@ -19,9 +19,14 @@ function wxToZh(wx) {
 
 const DIR8 = () => ta('dir8');
 
+/* 飞行规则四色(ICAO 航图惯例):VFR 绿 / MVFR 蓝 / IFR 橙 / LIFR 红 */
+const FR_COLORS = { VFR: [86, 196, 128], MVFR: [64, 158, 235], IFR: [244, 160, 52], LIFR: [235, 80, 70] };
+const frCss = (f) => (FR_COLORS[f] ? `rgb(${FR_COLORS[f].join(',')})` : 'rgb(150,160,175)');
+
 export class StationLayer {
-  constructor(map) {
+  constructor(map, opts = {}) {
     this.map = map;
+    this.frMode = !!opts.fr; // FR 模式:按飞行规则着色(机场层);否则按温度着色(站点层)
     this.canvas = document.createElement('canvas');
     this.canvas.id = 'stations-canvas';
     document.getElementById('overlay-root').appendChild(this.canvas);
@@ -101,7 +106,9 @@ export class StationLayer {
       const y = p.y - cp.y + this.h / 2;
       if (x < -6 || y < -6 || x > this.w + 6 || y > this.h + 6) continue;
       this.pxIndex.push({ x, y, s });
-      const col = Number.isFinite(s.t) ? TEMP.color(s.t) : [160, 180, 200, 230];
+      const col = this.frMode
+        ? (FR_COLORS[s.f] || [150, 160, 175, 220])
+        : (Number.isFinite(s.t) ? TEMP.color(s.t) : [160, 180, 200, 230]);
       ctx.beginPath();
       ctx.arc(x, y, r, 0, 6.2832);
       ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},1)`;
@@ -160,6 +167,7 @@ export class StationLayer {
     return `<div class="tc-popup">
       <b>${esc(s.n || s.i)}</b>
       <div style="opacity:.75;font-size:11.5px;margin:2px 0 6px">${esc(s.i)} · ${t('st.metar')}${ageH != null ? ` · ${ageH < 1 ? t('st.justNow') : t('st.hoursAgo', { n: Math.round(ageH) })}` : ''}</div>
+      ${s.f ? `<div style="margin:0 0 6px;font-size:11.5px">${t('st.fr')} <b style="color:${frCss(s.f)}">${esc(s.f)}</b>${s.cb != null ? ` · ${t('st.ceil')} ${esc(s.cb)} ft` : ''}</div>` : ''}
       <div class="tc-grid">
         <span>${t('st.temp')}</span><b>${Number.isFinite(s.t) ? Math.round(s.t) + '°C' : '—'}</b>
         <span>${t('st.dew')}</span><b>${Number.isFinite(s.td) ? Math.round(s.td) + '°C' : '—'}</b>
