@@ -17,6 +17,9 @@ import { LightningLayer } from './layers/lightning.js';
 import { AuroraLayer } from './layers/aurora.js';
 import { TropicalLayer } from './layers/tropical.js';
 import { StationLayer } from './layers/stations.js';
+import { WarningsLayer } from './layers/warnings.js';
+import { QuakesLayer } from './layers/quakes.js';
+import { Terminator } from './terminator.js';
 import { Timeline } from './timeline.js';
 import { ForecastPanel, setDegUnit } from './panel.js';
 import { initUnits, onUnits, units, unitsHash, convV, unitLabel, cycleUnit, fmtPresStr, fmtPrecipStr } from './units.js';
@@ -395,6 +398,9 @@ const airports = new StationLayer(map, { fr: true });
 const snowCover = new SnowCoverLayer(map);
 const gibs = new GibsLayer(map);
 const firesLayer = new FiresLayer(map, { toast });
+const warnings = new WarningsLayer(map, { toast });
+const quakes = new QuakesLayer(map, { toast });
+const terminator = new Terminator(map);
 const aqi = new AqiLayer(map);
 const barbs = new BarbLayer(map);
 const timeline = new Timeline({ onChange: onTimeChange });
@@ -641,6 +647,12 @@ const OVERLAYS = [
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3v18M5.5 6.2l13 11.6M5.5 17.8l13-11.6M12 6.5l-1.8-1.8M12 6.5l1.8-1.8M12 17.5l-1.8 1.8M12 17.5l1.8 1.8M5 12H3.2M5 12l-1.3 1.4M5 12 3.7 10.6M19 12h1.8M19 12l1.3 1.4M19 12l-1.3-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' },
   { id: 'aurora', label: '极光', title: 'NOAA SWPC OVATION 极光概率(未来 30-90 分钟,每 30 分钟更新)',
     icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 14c2-5.5 3.6-5.5 5.5 0s3.6 5.5 5.5 0 3.4-5.2 7 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M4.5 19c1.8-4 3.2-4 5 0s3.2 4 5 0 2.8-3.8 5.5 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>' },
+  { id: 'warnings', label: '预警', title: '官方气象预警:美国 NWS 多边形 + 欧洲 MeteoAlarm(黄/橙/红,每小时更新)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3.5 22 20H2L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.15" fill="currentColor"/></svg>' },
+  { id: 'quakes', label: '地震', title: '全球地震(USGS):24h 内 2.5 级+ 与 7 天内 4.5 级+,点大小=震级 颜色=时间(每小时更新)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2 15c2.5 0 3-2.5 5-2.5S9.5 15 12 15s3-2.5 5-2.5 2.5 2.5 5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 13.5V20M12 13.5l4-3.2M12 13.5l-4-3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.75"/></svg>' },
+  { id: 'daynight', label: '晨昏线', title: '昼夜晨昏线:按当前时刻计算太阳直射点,深色遮罩显示夜半球(前端实时计算)',
+    icon: '<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.8A8.2 8.2 0 0 1 12 20.2z" fill="currentColor" opacity="0.55"/></svg>' },
 ];
 const overlayBtnBox = document.getElementById('overlay-buttons');
 const satChannelWrap = document.getElementById('sat-channel-wrap');
@@ -674,6 +686,9 @@ function toggleOverlay(id, on, silent) {
   else if (id === 'airports') airports.show(on);
   else if (id === 'snowcover') snowCover.show(on);
   else if (id === 'aurora') aurora.show(on);
+  else if (id === 'warnings') warnings.show(on);
+  else if (id === 'quakes') quakes.show(on);
+  else if (id === 'daynight') terminator.show(on);
   document.getElementById(`ov-${id}`)?.classList.toggle('active', on);
   if (!silent) syncUrl();
 }
@@ -1105,7 +1120,7 @@ window.__currentModelLabel = MODEL_LABELS[state.model];
 window.__state = state; window.__globe = globe; // 调试钩子
 window.__applyGrid = (data, key) => applyGrid(data instanceof Grid ? data : new Grid(data), key || 'debug'); // 调试钩子:可注入格点数据
 window.__app_map = map;
-window.__app_overlays = { lightning, satellite, tropical, stations, airports, aurora }; // 调试钩子:叠加层状态
+window.__app_overlays = { lightning, satellite, tropical, stations, airports, aurora, warnings, quakes, terminator, fires: firesLayer }; // 调试钩子:叠加层状态
 /* 静态模式:数据索引就绪后刷新图层置灰与模式胶囊(初始 setLayer 内部已等待索引,
  * URL 指定的模式若不提供该图层,也会由 setLayer 的自动解析修正) */
 ensureStaticAvail().then(() => {

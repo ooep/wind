@@ -43,6 +43,27 @@ export class AuroraLayer {
     this.timer = null;
     this.fetching = false;
     this.onMove = () => { if (this.visible) this.draw(); };
+    /* Kp 信息条(空间天气来自烘焙包 dist/data/swx/latest.json,可选增强) */
+    this.kpEl = document.createElement('div');
+    this.kpEl.style.cssText = 'position:absolute;left:10px;bottom:12px;pointer-events:none;z-index:8;'
+      + 'font:600 12px/1.4 system-ui,sans-serif;color:#d8f7e6;background:rgba(8,20,16,.72);'
+      + 'border:1px solid rgba(120,220,160,.35);border-radius:6px;padding:3px 8px;display:none;';
+    document.getElementById('overlay-root').appendChild(this.kpEl);
+  }
+
+  async loadKp() {
+    try {
+      const r = await fetch('dist/data/swx/latest.json', { cache: 'no-store' });
+      if (!r.ok) return;
+      const d = await r.json();
+      const kp = d.kpLatest && typeof d.kpLatest.kp === 'number' ? d.kpLatest.kp : null;
+      if (kp == null) return;
+      /* Kp 越高极光越强越南压:0-2 绿(平静) 3-4 黄(活跃) 5+ 红(风暴) */
+      const color = kp >= 5 ? '#ff5a5a' : kp >= 3 ? '#ffd24a' : '#7de3a0';
+      this.kpEl.innerHTML = `Kp <span style="color:${color};font-size:14px">${kp.toFixed(1)}</span>`
+        + ' <span style="opacity:.7;font-weight:400">· SWPC</span>';
+      this.kpEl.style.display = '';
+    } catch { /* 开发模式无烘焙包时静默隐藏 */ }
   }
 
   async load(force) {
@@ -116,8 +137,10 @@ export class AuroraLayer {
   show(on) {
     this.visible = on;
     this.canvas.style.display = on ? '' : 'none';
+    this.kpEl.style.display = 'none';
     if (on) {
       this.load();
+      this.loadKp();
       this.timer = setInterval(() => this.load(true), REFRESH_MS);
       this.map.on('moveend zoomend resize', this.onMove);
       this.onMove();

@@ -30,6 +30,9 @@ jobs:
           node tools/bake-tropical.js dist/data
           node tools/bake-aq.js dist/data
           node tools/bake-fires.js dist/data
+          node tools/bake-warnings.js dist/data
+          node tools/bake-quakes.js dist/data
+          node tools/bake-swx.js dist/data
 
       - name: 上传数据 artifact(deploy-data 统一组装部署)
         uses: actions/upload-artifact@v4
@@ -40,4 +43,7 @@ jobs:
             dist/data/tropical
             dist/data/aq
             dist/data/fires
+            dist/data/warnings
+            dist/data/quakes
+            dist/data/swx
           retention-days: 3

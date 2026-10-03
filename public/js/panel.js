@@ -15,6 +15,16 @@ const WMO_EMOJI = {
 };
 const wmo = (c) => [(has('wmo.' + c) ? t('wmo.' + c) : '—'), WMO_EMOJI[c] || '🌡️'];
 const p2 = (n) => String(n).padStart(2, '0');
+
+/* 月相(纯天文计算):以 2000-01-06 18:14 UTC 新月为参考,按朔望月 29.53 天取模 */
+const MOON_ICON = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+function moonPhase(date = new Date()) {
+  const synodic = 29.530588853;
+  const ref = Date.UTC(2000, 0, 6, 18, 14);
+  let phase = ((date.getTime() - ref) / 86400e3) % synodic / synodic;
+  if (phase < 0) phase += 1;
+  return { idx: Math.round(phase * 8) % 8, illum: Math.round((1 - Math.cos(2 * Math.PI * phase)) / 2 * 100) };
+}
 /* 点位预报固定走大气基准模式:海浪/海温/化学/雪包等专用模式无完整大气要素,
  * 点击点位始终展示通用天气面板(海浪详情由「海浪」标签页按需获取,与模式无关) */
 const POINT_BASE = { waves_raw: 'gfs_raw', ocean_raw: 'gfs_raw', chem_raw: 'gfs_raw', gfs_snow: 'gfs_raw' };
@@ -144,6 +154,13 @@ export class ForecastPanel {
       </div>
       <div id="ptab-body"></div>
       <div class="psun">${t('panel.sun', { rise: fmtHourLocal(Date.parse(d.daily.sunrise[0])), set: fmtHourLocal(Date.parse(d.daily.sunset[0])) })}</div>
+      <div class="psun">${(() => {
+        const m = moonPhase();
+        const dayMs = Date.parse(d.daily.sunset[0]) - Date.parse(d.daily.sunrise[0]);
+        const day = Number.isFinite(dayMs) && dayMs > 0
+          ? `${Math.floor(dayMs / 3600e3)}h ${p2(Math.round((dayMs % 3600e3) / 60e3))}m` : '—';
+        return t('panel.moon', { icon: MOON_ICON[m.idx], name: t('astro.moon' + m.idx), illum: m.illum, day });
+      })()}</div>
       <div style="font-size:10.5px;color:var(--text-dim);margin-top:8px;text-align:center">${t('panel.src', { model: modelLabel(d, this.dataModel), stale: staleNote })}</div>
     `;
 

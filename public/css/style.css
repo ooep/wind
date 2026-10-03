@@ -613,6 +613,11 @@ dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(
 /* ---------- 台风/站点叠加(canvas 自绘) ---------- */
 #overlay-root canvas#tropical-canvas { z-index: 6; }
 #overlay-root canvas#stations-canvas { z-index: 7; }
+#overlay-root canvas#terminator-canvas { z-index: 4; }  /* 夜幕:天气场之上、信息叠加之下 */
+#overlay-root canvas#warnings-canvas,
+#overlay-root canvas#quakes-canvas,
+#overlay-root canvas#fires-canvas,
+#overlay-root canvas#aurora-canvas { z-index: 5; }      /* 事件叠加层:压过天气场与晨昏线 */
 #obs-popup {
   position: absolute; z-index: 10; display: none; pointer-events: none;
   background: rgba(13, 22, 34, 0.96); color: var(--text);
