@@ -242,7 +242,7 @@ function varNeeds(def) {
     wind: ['u', 'v'], gust: ['gust'], barbs: ['u', 'v'],
     feels: ['temp', 'rh', 'u', 'v'], wetbulb: ['temp', 'rh'], dew: ['temp', 'rh'], ptype: ['temp', 'precip'],
     fog: ['rh'],
-    cloudbase: ['temp', 'rh'], ffmc: ['temp', 'rh', 'precip'], /* live 模式由服务端同公式派生 */
+    /* cloudbase/ffmc/icing/cat/gustmax 等派生场由服务端与烘焙端同源产出,前端直读 */
   };
   return M[def.variable] || [def.variable];
 }
