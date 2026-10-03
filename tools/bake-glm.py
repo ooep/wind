@@ -80,11 +80,15 @@ def scan_time(key):
         return None
 
 
-def fetch_flash(key, cutoff):
+def download(key):
+    """并发下载(仅网络 IO,netCDF4/HDF5 非线程安全 → 解析必须串行)"""
+    with urlopen(f'{BUCKET}/{key}', 60) as r:
+        return r.read()
+
+
+def parse_flash(key, raw, cutoff):
     import tempfile
     from netCDF4 import Dataset
-    with urlopen(f'{BUCKET}/{key}', 60) as r:
-        raw = r.read()
     out = []
     tmp = tempfile.NamedTemporaryFile(suffix='.nc', delete=False)
     try:
@@ -108,11 +112,19 @@ def fetch_flash(key, cutoff):
                     continue
                 la, lo = float(lat[i]), float(lon[i])
                 if -90 <= la <= 90 and -180 <= lo <= 180:
-                    # 第 4 位复用为能量档:≥5kJ 强闪 → 前端画大点
+                    # 第 4 位复用为能量档:>=5kJ 强闪,前端画大点
                     out.append((round(lo, 2), round(la, 2), round(t), 1 if float(en[i]) >= 5000 else -1))
+    except Exception as e:
+        print(f'[glm] {key[-44:]} 解析失败跳过: {e}', file=sys.stderr)
+        return []
     finally:
-        os.unlink(tmp.name)
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
     return out
+
+
 def main():
     t0 = time.time()
     now = datetime.now(timezone.utc)
@@ -142,10 +154,14 @@ def main():
 
     points = []
     ok = 0
+    raws = {}
     with ThreadPoolExecutor(max_workers=CONC) as ex:
-        for res in ex.map(lambda x: fetch_flash(x[1], cutoff), cand):
-            ok += 1
-            points.extend(res)
+        for key, raw in zip([k for _, k in cand], ex.map(lambda x: download(x[1]), cand)):
+            raws[key] = raw
+    for _, key in cand:
+        pts = parse_flash(key, raws[key], cutoff)
+        ok += 1
+        points.extend(pts)
 
     if not points:
         print('glm: 窗口内无有效闪点(可能实为静稳)— 保留旧文件,不覆盖输出', file=sys.stderr)
