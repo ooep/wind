@@ -45,7 +45,7 @@ function varScale(model, vk) {
   if (model === 'ocean_raw') return (base === 'sst' || base === 'ssta') ? 100 : 1;
   if (model === 'gfs_raw' || model === 'gfs_snow') {
     if (DERIVED_SCALE[base]) return DERIVED_SCALE[base];
-    const cfg = gfs.surfaceEngine.varCfg[base] || (gfs.surfaceEngineX && gfs.surfaceEngineX.varCfg[base]);
+    const cfg = gfs.surfaceEngine.varCfg[base] || (gfs.surfaceEngineX && gfs.surfaceEngineX.varCfg[base]) || (gfs.surfaceEngineW100 && gfs.surfaceEngineW100.varCfg[base]);
     if (cfg) return cfg.scale;
   } else {
     if (model === 'waves_raw') {

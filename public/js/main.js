@@ -126,6 +126,7 @@ const LAYERS = [
   { id: 'wind', label: '风场', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'wind', fmt: (v) => String(Math.round(convV('wind', v))) },
   { id: 'gust', label: '阵风', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'gust', fmt: (v) => String(Math.round(convV('wind', v))), models: ['gfs_raw'] },
   { id: 'gustmax', label: '最大阵风·过程', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'gustmax', fmt: (v) => String(Math.round(convV('wind', v))), models: ['gfs_raw'] },
+  { id: 'wind100', label: '100米风', unit: 'm/s', cat: 'wind', cmap: WIND, variable: 'wind', models: ['gfs_raw'], fmt: (v) => String(Math.round(convV('wind', v))) },
   { id: 'barbs', label: '风向杆', unit: 'kt', cat: 'wind', cmap: WIND, special: 'barbs', fmt: (v) => String(Math.round(convV('wind', v))) },
   { id: 'temp', label: '温度', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'temp', fmt: (v) => String(Math.round(convV('temp', v))) },
   { id: 'feels', label: '体感', unit: '°C', cat: 'temp', cmap: TEMP, variable: 'feels', fmt: (v) => String(Math.round(convV('temp', v))) },
@@ -235,7 +236,7 @@ const LAYERS = [
 const GROUPS = [
   { id: 'obs', label: '观测', layers: ['radar'] },
   { id: 'satobs', label: '卫星观测', layers: ['fires', 'imerg', 'lst', 'smap', 'frozen', 'ndvi', 'aerosol', 'chl', 'seaice', 'vapor'] },
-  { id: 'wind', label: '风', layers: ['wind', 'gust', 'gustmax', 'barbs', 'wpd'] },
+  { id: 'wind', label: '风', layers: ['wind', 'wind100', 'gust', 'gustmax', 'barbs', 'wpd'] },
   { id: 'temp', label: '温湿', layers: ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl'] },
   { id: 'sun', label: '太阳', layers: ['solar'] },
   { id: 'cloud', label: '云雨', layers: ['cloud', 'cloudbase', 'cloudtop', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'vis'] },
@@ -252,6 +253,7 @@ const GROUPS = [
 /* 当前图层渲染所需的原始变量(派生图层映射到其数据来源) */
 function varNeeds(def) {
   if (!def || def.special) return [];
+  if (def.id === 'wind100') return ['u100', 'v100']; // 100 米高度风(GFS 原生层),前端别名成 u/v
   const M = {
     wind: ['u', 'v'], gust: ['gust'], barbs: ['u', 'v'],
     feels: ['temp', 'rh', 'u', 'v'], wetbulb: ['temp', 'rh'], dew: ['temp', 'rh'], ptype: ['temp', 'precip'],
@@ -767,6 +769,11 @@ async function fetchGridNow() {
   try {
     const needs = needsFor(layerById(state.layer));
     const { grid } = await fetchGrid({ ...spec, model: state.model, level: state.level, needs });
+    /* 100 米风层:把 u100/v100 别名成 u/v,标量场/粒子/采样全链路按风场消费 */
+    if (state.layer === 'wind100' && grid.vars && grid.vars.u100) {
+      grid.vars.u = grid.vars.u100;
+      grid.vars.v = grid.vars.v100;
+    }
     // 请求期间视图又变了:丢弃(已缓存,稍后会重新取)
     const latest = gridSpec();
     if (specKey(latest) !== key) { return; }

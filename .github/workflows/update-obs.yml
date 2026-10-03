@@ -23,6 +23,13 @@ jobs:
         with:
           node-version: '20'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装 python 依赖(GLM netCDF4 解析)
+        run: pip install --quiet netCDF4 numpy
+
       - name: 抓取并烘焙观测数据
         run: |
           node tools/bake-obs.js dist/data
@@ -36,6 +43,7 @@ jobs:
           node tools/bake-buoys.js dist/data
           node tools/bake-rivers.js dist/data
           node tools/bake-tides.js dist/data
+          python3 tools/bake-glm.py dist/data
 
       - name: 上传数据 artifact(deploy-data 统一组装部署)
         uses: actions/upload-artifact@v4
@@ -52,4 +60,5 @@ jobs:
             dist/data/buoys
             dist/data/rivers
             dist/data/tides
+            dist/data/glm
           retention-days: 3

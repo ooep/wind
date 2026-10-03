@@ -1,8 +1,12 @@
-/* 闪电实时图层(Blitzortung 社区定位网络):
+/* 闪电实时图层(Blitzortung 社区定位网络 + GOES GLM 卫星光总闪):
  * WebSocket 直连官方推送(连上后发 {"a":111},二进制内容为 LZW 压缩的 JSON 文本帧),
- * 最近 90 分钟落雷按年龄渐变着色绘制在 canvas 上。纯实时,不与时间轴联动。 */
+ * 最近 90 分钟落雷按年龄渐变着色绘制在 canvas 上。纯实时,不与时间轴联动。
+ * 开图时先注入 CI 烘焙的 GLM 烘焙点(美洲扇区,含云内闪,最近 75 分钟)——
+ * 无需等 WebSocket 积累,打开即有雷;Blitzortung 定位点持续叠加其上。 */
+import { resolveMode, isStatic, staticBase } from '../api.js';
 
 const WS_HOSTS = ['ws1', 'ws3', 'ws7', 'ws8'];
+const GLM_TTL = 5 * 60_000;
 const KEEP_MS = 90 * 60_000;      // 保留时长
 const DRAW_MS = 120;              // 重绘间隔
 const AGE_COLORS = [              // [年龄上限ms, r, g, b]
@@ -43,6 +47,8 @@ export class LightningLayer {
     this.strikes = [];           // {t, lat, lon, pol}
     this.ws = null;
     this.hostIdx = 0;
+    this._glmAt = 0;
+    this._glmTimer = null;
     this._drawTimer = null;
     this._retryTimer = null;
     this._closedByUs = false;
@@ -65,14 +71,36 @@ export class LightningLayer {
     this.visible = on;
     if (on) {
       this._drawTimer = setInterval(() => this._tick(), DRAW_MS);
+      this._seedGlm();
+      this._glmTimer = setInterval(() => this._seedGlm(), GLM_TTL);
       this._connect();
     } else {
       clearInterval(this._drawTimer);
       clearTimeout(this._retryTimer);
+      clearInterval(this._glmTimer);
       this._closedByUs = true;
       if (this.ws) { try { this.ws.close(); } catch { /* 已断开 */ } this.ws = null; }
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
+  }
+
+  /* GLM 烘焙点注入(升序合入,同一条年龄渐变链路渲染) */
+  async _seedGlm() {
+    if (Date.now() - this._glmAt < GLM_TTL - 1000) return;
+    try {
+      await resolveMode();
+      const url = isStatic() ? `${staticBase()}/glm/latest.json` : '/dist/data/glm/latest.json';
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!Array.isArray(d.points)) return;
+      this._glmAt = Date.now();
+      const pts = d.points
+        .map(([lon, lat, tSec, pol]) => ({ t: tSec * 1000, lat, lon, pol: pol || -1 }))
+        .sort((a, b) => a.t - b.t);
+      this.strikes = [...pts, ...this.strikes].sort((a, b) => a.t - b.t);
+      if (this.strikes.length > 14000) this.strikes.splice(0, this.strikes.length - 12000);
+    } catch { /* 静态包未就绪时静默(Blitzortung 仍独立工作) */ }
   }
 
   _connect() {
