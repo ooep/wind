@@ -41,15 +41,20 @@ jobs:
         if: github.event_name == 'workflow_run'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }} # 去重步在 checkout 之前,gh 需要 GH_REPO 才能用相对 API 路径
           RUN_ID: ${{ github.run_id }}
         run: |
-          busy=$(gh api "actions/workflows/deploy-data.yml/runs?per_page=8" \
+          # 查询失败按"无去重"继续(fail-open):守卫坏了不能反过来越过部署
+          if ! busy=$(gh api "actions/workflows/deploy-data.yml/runs?per_page=8" \
             --jq '[.workflow_runs[]
                    | select(.id != '"$RUN_ID"')
                    | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "pending"
                             or (.conclusion == "success"
                                 and ((now - (.updated_at | fromdateiso8601)) < 600)))]
-                  | length')
+                  | length' 2>/dev/null); then
+            echo "::warning::去重查询失败,按无去重继续部署"
+            busy=0
+          fi
           echo "同类活跃/刚成功 run:$busy"
           if [ "$busy" -gt 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
