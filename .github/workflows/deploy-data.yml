@@ -31,21 +31,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # 去 NWP 收官 burst 的互相 cancel churn:多模式几分钟内接连完成会触发多班部署,
+      # 并发组 cancel-in-progress:true 会把在跑的班次掐死。规则(只约束自动 workflow_run 触发;
+      # 手动 dispatch/看门狗补部署属有意为之,永不去重):
+      #   已有同类 run 在跑/排队,或 10 分钟内已有成功部署 → 本班跳过,产物由下一班(≤1h 的 obs 班)统一组装。
+      # 注:wrangler 直传不占 CF Pages 500 builds/月 限额(那是 git 集成构建的额度),无需降频。
+      - name: 部署去重
+        id: dedup
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          busy=$(gh api "actions/workflows/deploy-data.yml/runs?per_page=8" \
+            --jq '[.workflow_runs[]
+                   | select(.id != '"$RUN_ID"')
+                   | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "pending"
+                            or (.conclusion == "success"
+                                and ((now - (.updated_at | fromdateiso8601)) < 600)))]
+                  | length')
+          echo "同类活跃/刚成功 run:$busy"
+          if [ "$busy" -gt 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::已有部署在跑或 10 分钟内完成,本班跳过(数据由下一班组装上生产)"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.dedup.outputs.skip != 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.dedup.outputs.skip != 'true'
         with:
           node-version: '20'
 
       - name: 拉取各模式最新数据产物
+        if: steps.dedup.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/fetch-data-artifacts.sh
 
       - name: 组装 _site(前端 + dist/data)
+        if: steps.dedup.outputs.skip != 'true'
         run: bash pages-build.sh
 
       - name: 发布到 Cloudflare Pages
+        if: steps.dedup.outputs.skip != 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
