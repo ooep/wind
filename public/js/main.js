@@ -99,6 +99,7 @@ const ICONS = {
 
 /* 卫星观测图层图标:复用语义相近的既有图标 + 两个新增(植被/叶绿素) */
 ICONS.imerg = ICONS.precip;
+ICONS.wind100 = ICONS.wind;
 ICONS.lst = ICONS.soilt;
 ICONS.smap = ICONS.soilw;
 ICONS.frozen = ICONS.frzlvl;
