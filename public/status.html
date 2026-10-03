@@ -189,8 +189,11 @@ const OBS = [
   ['大河径流', 'rivers/latest.json', 30, 54],
   ['潮汐', 'tides/global.json', 30, 54],
 ];
-// 模式烘焙新鲜度阈值(小时):绿 / 黄
-const MODEL_FRESH = { gfs_raw: 12, gefs_raw: 12, ecmwf_raw: 15, aifs_raw: 15, waves_raw: 12, ocean_raw: 48, chem_raw: 40, currents_raw: 48, gfs_snow: 30 };
+// 模式起报(runKey)新鲜度阈值(小时):绿 / 黄(黄 = 绿×1.5)。
+// 按起报时间判龄期而非烘焙时间——重烘旧 run 不会假绿。阈值参考各源发布滞后 + 定时烘焙间隔的最大合法龄期:
+// GFS/GEFS/Wave 6h 周期发布滞后 ~4h + 6h 间隔 → 最长 ~10.5h;ECMWF 00Z 发布慢(~06:30Z)→ 最长 ~14h;
+// AIFS 只有 00/12Z(两轮烘焙窗口间最长 ~20.7h);OISST preliminary 滞后 1-2 天;GEOS-5 滞后 ~1 天+。
+const MODEL_FRESH = { gfs_raw: 12, gefs_raw: 12, ecmwf_raw: 15, aifs_raw: 21, waves_raw: 12, ocean_raw: 48, chem_raw: 40, currents_raw: 48, gfs_snow: 12 };
 const MODEL_NAME = { gfs_raw: 'GFS 0.5°', gefs_raw: 'GEFS 0.5°', ecmwf_raw: 'ECMWF IFS', aifs_raw: 'ECMWF AIFS', waves_raw: 'GFS Wave', ocean_raw: 'OISST 海温', chem_raw: 'GEOS-5 化学', currents_raw: 'HYCOM 海流', gfs_snow: 'GFS 雪包(高分辨率)' };
 
 /* ---------- 工具 ---------- */
@@ -240,12 +243,17 @@ async function main() {
     const last = times.length ? Math.max(...times.filter((x) => x <= now + 3600e3)) : NaN;
     const fresh = MODEL_FRESH[m] || 14;
     const ageH = Number.isFinite(gen) ? (now - gen) / 3600e3 : NaN;
-    const lvl = !Number.isFinite(ageH) ? 0 : ageH <= fresh ? 2 : ageH <= fresh * 2.2 ? 1 : 0;
+    /* 圆点以 runKey 起报龄期为准(烘焙时间只说明管道活着,不说明数据新);
+       runKey 解析不出时回退烘焙龄期 */
+    const runMs = runKeyMs(e.runKey);
+    const runAgeH = Number.isFinite(runMs) ? (now - runMs) / 3600e3 : NaN;
+    const judgeH = Number.isFinite(runAgeH) ? runAgeH : ageH;
+    const lvl = !Number.isFinite(judgeH) ? 0 : judgeH <= fresh ? 2 : judgeH <= fresh * 1.5 ? 1 : 0;
     const varCount = Object.keys(meta.vars || {}).length;
     const oldFmt = meta.format !== 'per-var';
     return `<div class="card"><i class="dot ${dotCls(lvl)}"></i><b>${esc(MODEL_NAME[m] || m)}</b>
-      <span class="age" title="数据包烘焙时间">${Number.isFinite(ageH) ? esc(fmtAgo(now - gen)) : '—'}</span>
-      <div class="row">run <code>${esc(e.runKey)}</code> · 烘焙于 ${Number.isFinite(gen) ? esc(fmtClock(gen)) : '—'}</div>
+      <span class="age" title="最新起报时间龄期">${Number.isFinite(runAgeH) ? esc(fmtAgo(now - runMs)) : Number.isFinite(ageH) ? esc(fmtAgo(now - gen)) : '—'}</span>
+      <div class="row">run <code>${esc(e.runKey)}</code> · 烘焙于 ${Number.isFinite(gen) ? esc(fmtClock(gen)) : '—'}${Number.isFinite(ageH) ? `(${esc(fmtAgo(now - gen))})` : ''}</div>
       <div class="row">${times.length ? `${times.length} 帧 · 最新时次 ${esc(fmtClock(last))}(${esc(fmtAgo(now - last))})` : '<span class="dim">无时间帧</span>'} · ${oldFmt ? '<span class="dim">全量旧格式</span>' : `${varCount} 变量`}</div>
     </div>`;
   }).join('');
