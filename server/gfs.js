@@ -70,6 +70,13 @@ const VARS_X = {
   lhtfl: { grib: 'LHTFL', level: 'surface', scale: 1, conv: (v) => v, ave: true },           // 潜热通量 W/m²(向上为正)
 };
 
+/* 100 米高度风(GFS pgrb2 原生 "100 m above ground" 层):风电/滑翔/风筝等高度层需求。
+ * 独立引擎目录(捆包布局变更会使 .done 全作废,新变量一律拆目录)。 */
+const VARS_W100 = {
+  u100: { grib: 'UGRD', level: '100 m above ground', scale: 100, conv: (v) => v },
+  v100: { grib: 'VGRD', level: '100 m above ground', scale: 100, conv: (v) => v },
+};
+
 /* 气压层变量(按需摄取):该层的风/温/湿 + 位势高度 */
 const LEVELS = [925, 850, 700, 500, 300, 250, 200, 150, 100, 70, 10]; // 平流层延伸至 10 hPa(nullschool 同款深度)
 function levelVars(level) {
@@ -518,6 +525,7 @@ class GfsEngine {
 
 const surface = new GfsEngine({ varCfg: VARS, dirName: 'gfsraw' });
 const surfaceX = new GfsEngine({ varCfg: VARS_X, dirName: 'gfsraw-x' });
+const wind100 = new GfsEngine({ varCfg: VARS_W100, dirName: 'gfsraw-w100' });
 const levelEngines = new Map();
 function levelEngine(level) {
   if (!LEVELS.includes(level)) throw new Error(`不支持的气压层 ${level}`);
@@ -576,6 +584,17 @@ async function rawGrid(w, s, e, n, stepDeg, level = 0) {
     }
   } catch (e) {
     console.warn(`  [GFS] X 引擎不可用,跳过辐射/边界层变量: ${e.message}`);
+  }
+  /* 100 米风:独立引擎,容错同上 */
+  try {
+    const w100 = await wind100.gridCore(w, s, e, n, stepDeg);
+    if (w100.times.length === base.times.length && w100.times[0] === base.times[0]) {
+      Object.assign(vars, w100.vars);
+    } else {
+      console.warn(`  [GFS] 100m 风引擎时间轴与地面不一致(${w100.times.length} vs ${base.times.length} 帧),跳过`);
+    }
+  } catch (e) {
+    console.warn(`  [GFS] 100m 风引擎不可用,跳过: ${e.message}`);
   }
   if (level > 0) {
     const lev = await levelEngine(level).gridCore(w, s, e, n, stepDeg);
@@ -747,4 +766,4 @@ async function levelRawGrid(level, w, s, e, n, stepDeg) {
   return out;
 }
 
-module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, surfaceEngineX: surfaceX, levelRawGrid, buildSteps };
+module.exports = { rawGrid, rawPoint, status, LEVELS, surfaceEngine: surface, surfaceEngineX: surfaceX, surfaceEngineW100: wind100, levelRawGrid, buildSteps };

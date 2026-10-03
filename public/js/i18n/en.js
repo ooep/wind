@@ -1,6 +1,7 @@
 /* English language pack(次级回退词典,需覆盖全部 UI 键) */
 export default {
   'meta.title': 'FengyunEarth · Live Global Weather Visualization',
+  'status.updatedAt': 'Refreshed',
   'lang.label': 'Language',
   'ui.searchPh': 'Search city / place…',
   'ui.myLoc': 'My location',
@@ -107,6 +108,8 @@ export default {
   'firelv.ext': 'Extreme', 'firelv.vhigh': 'Very high', 'firelv.high': 'High', 'firelv.med': 'Moderate', 'firelv.low': 'Low',
   'toast.layerUnavailable': '“{name}” has no data model online yet, please try again later',
   'toast.layerLoadFail': 'Failed to load layer data: {msg}',
+  'toast.layerNoData': '“{name}” is not baked for this model yet — switched to an available model, or wait for the next bake',
+  'toast.wind100Fallback': '100 m wind not baked yet — showing 10 m wind for now',
   'toast.partialVars': 'Some layer data not ready: {msg}',
   'toast.stale': 'Upstream rate-limited — showing weather data cached about {h} h ago',
   'toast.quota': 'Daily free quota exhausted, back tomorrow; set the OPEN_METEO_API_KEY env var for a higher quota (see README)',
@@ -224,7 +227,8 @@ export default {
     ['Satellite imagery', '<a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — official NASA VIIRS/MODIS true color imagery, updated daily.'],
     ['Place search', 'Open-Meteo Geocoding (GeoNames data); results are localized to the interface language.'],
     ['Basemap', '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> vector lines (coastlines/borders/lakes/city labels, localized, public domain); “Dark land” is a locally rendered land fill; “Satellite + lines” imagery from NASA GIBS; “Terrain” from <a href="https://opentopomap.org/" target="_blank" rel="noopener">OpenTopoMap</a> (CC-BY-SA). The vector basemap renders above the weather layers and is never hidden by the fill. City labels follow the interface language.'],
-    ['Keyboard shortcuts', '<b>Space</b> play/pause · <b>←</b>/<b>→</b> step 1 h · <b>↑</b>/<b>↓</b> change layer · <b>PgUp</b>/<b>PgDn</b> pressure level · <b>+</b>/<b>−</b> zoom · <b>F</b> focus search · <b>Esc</b> close panel/dialog/measure. Hover the map to read values; click the legend to cycle units; playback speed is right of the timeline'],
+    ['Keyboard shortcuts', '<b>Space</b> play/pause · <b>←</b>/<b>→</b> step 1 h · <b>↑</b>/<b>↓</b> change layer · <b>PgUp</b>/<b>PgDn</b> pressure level · <b>+</b>/<b>−</b> zoom · <b>F</b> focus search · <b>Esc</b> close panel/dialog/measure. Hover the map to read values; click the legend to cycle units; playback speed is right of the timeline'],,
+    ['Data status', 'See the <a href="/status.html" target="_blank" rel="noopener">data status page</a> (/status.html) for per-layer freshness, variable coverage and bake progress.'],
   ],
   'about.license': 'Open data licenses: NOAA GFS is a US government product (public domain); Open-Meteo data is CC BY 4.0 (free for non-commercial use, commercial use requires a license). This site is a technical demo and not a basis for weather decisions.',
   'globe.hint': 'Drag to rotate · scroll to zoom · click a point for details',

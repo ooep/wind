@@ -312,6 +312,18 @@ export function staticHasModel(m) {
   return !!staticAvailCache && staticAvailCache.includes(m);
 }
 
+/* 异步查询:某模式 meta 声明的变量键集合(含层级后缀如 u@850)。
+ * 供图层切换做变量级门控 — 模式在线但缺该图层变量时自动换模式,而不是渲染整屏 NaN。
+ * 模式不在索引/非静态模式返回 null(调用方应放行)。 */
+export async function staticModelVars(m) {
+  await resolveMode();
+  if (!staticMode) return null;
+  try {
+    const meta = await staticMetaGet(m);
+    return new Set(Object.keys((meta && meta.vars) || {}));
+  } catch { return null; }
+}
+
 /* 同步查询:静态模式清单是否已加载(未加载时调用方不应据此置灰图层或过滤选择器) */
 export function staticAvailReady() {
   return !!staticAvailCache;

@@ -28,6 +28,7 @@ export const LANGUAGES = [
 
 const ZH_CN = {
   'meta.title': '风云地球 FengyunEarth · 实时全球气象可视化',
+  'status.updatedAt': '刷新于',
   'lang.label': '语言',
   /* 顶栏 / 设置 */
   'ui.searchPh': '搜索城市 / 地点…',
@@ -141,6 +142,8 @@ const ZH_CN = {
   /* toast / hint */
   'toast.layerUnavailable': '「{name}」的数据模式尚未上线,请稍后再试',
   'toast.layerLoadFail': '图层数据加载失败:{msg}',
+  'toast.layerNoData': '「{name}」该模式暂无烘焙数据,已自动改用可用模式或等待下一轮烘焙',
+  'toast.wind100Fallback': '100 米风数据尚未烘焙完成,暂显示 10 米风场',
   'toast.partialVars': '部分图层数据未就绪:{msg}',
   'toast.stale': '上游数据源限流中,正在展示约 {h} 小时前缓存的气象数据',
   'toast.quota': '数据源当日免费配额已用尽,明日自动恢复;设置 OPEN_METEO_API_KEY 环境变量可获得更高配额(见 README)',
@@ -268,7 +271,8 @@ const ZH_CN = {
     ['卫星影像', '<a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener">NASA GIBS / Worldview</a> — NASA 官方 VIIRS/MODIS 真彩影像,每日更新。'],
     ['地名检索', 'Open-Meteo Geocoding(GeoNames 数据),结果跟随界面语言本地化。'],
     ['底图', '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> 矢量线划(海岸线/国界/湖泊/城市标注,已本地化,公有领域);「深色陆地」为本地渲染的陆地填充;「卫星 + 线划」影像来自 NASA GIBS;「地形」来自 <a href="https://opentopomap.org/" target="_blank" rel="noopener">OpenTopoMap</a>(CC-BY-SA)。矢量底图渲染在气象图层之上,不会被填色遮挡。城市标注按界面语言显示本地化名称。'],
-    ['快捷键', '<b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>↑</b>/<b>↓</b> 切换图层 · <b>PgUp</b>/<b>PgDn</b> 升降气压层 · <b>+</b>/<b>−</b> 缩放地图 · <b>F</b> 聚焦搜索 · <b>Esc</b> 关闭面板/弹窗/测量。鼠标悬停地图任意位置可读取当前图层数值;点击左栏底部色标可循环切换单位;时间轴右侧可调播放速度'],
+    ['快捷键', '<b>空格</b> 播放/暂停时间动画 · <b>←</b>/<b>→</b> 前后步进 1 小时 · <b>↑</b>/<b>↓</b> 切换图层 · <b>PgUp</b>/<b>PgDn</b> 升降气压层 · <b>+</b>/<b>−</b> 缩放地图 · <b>F</b> 聚焦搜索 · <b>Esc</b> 关闭面板/弹窗/测量。鼠标悬停地图任意位置可读取当前图层数值;点击左栏底部色标可循环切换单位;时间轴右侧可调播放速度'],,
+    ['数据状态', '各图层与数据源的<b>最近更新时间</b>、变量齐全度与烘焙进度见 <a href="/status.html" target="_blank" rel="noopener">数据状态页</a>(/status.html)。'],
   ],
   'about.license': '开放数据许可:NOAA GFS 为美国官方产出(public domain);Open-Meteo 数据 CC BY 4.0(非商业免费,商业使用需授权)。本站为技术演示,不构成任何气象决策依据。',
   'panel.sun': '🌅 {rise} 日出 · 🌇 {set} 日落(当地)',

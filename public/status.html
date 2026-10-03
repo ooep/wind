@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据状态 · 风云地球 FengyunEarth</title>
+<style>
+  :root {
+    --bg: #07090d; --panel: rgba(13,17,24,0.78); --panel-solid: #10141c;
+    --border: rgba(255,255,255,0.08); --border-strong: rgba(255,255,255,0.16);
+    --text: #e7edf5; --text-dim: #93a0b1; --text-faint: #6b7686;
+    --accent: #45c4ff; --accent2: #35d0ba; --danger: #ff5d5d;
+    --ok: #35d07a; --warn: #ffb84d;
+    --radius: 12px; --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; padding: 20px 16px 60px; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .sub { color: var(--text-faint); font-size: 12px; }
+  header .right { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 12.5px; }
+  select { background: var(--panel-solid); color: var(--text); border: 1px solid var(--border-strong); border-radius: 8px; padding: 4px 8px; font-size: 12.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--text-dim); font-size: 12px; margin: 10px 0 18px; align-items: center; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; background: var(--text-faint); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 6px rgba(53,208,122,0.55); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 6px rgba(255,184,77,0.5); }
+  .dot.bad { background: var(--danger); box-shadow: 0 0 6px rgba(255,93,93,0.5); }
+  .dot.na { background: #3a4351; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: var(--text); }
+  h2 small { color: var(--text-faint); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 10px; }
+  .card { background: var(--panel-solid); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+  .card b { font-size: 13.5px; }
+  .card .row { color: var(--text-dim); font-size: 12px; margin-top: 5px; line-height: 1.55; }
+  .card .age { float: right; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel-solid); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  th, td { text-align: left; padding: 7px 12px; font-size: 12.8px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: top; }
+  th { color: var(--text-faint); font-weight: 500; font-size: 11.5px; letter-spacing: 0.4px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td.name { white-space: nowrap; }
+  td .chip { display: inline-block; margin: 1px 6px 1px 0; padding: 1.5px 8px; border-radius: 20px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); font-size: 11.8px; white-space: nowrap; }
+  td .chip.miss { border-color: rgba(255,93,93,0.4); }
+  td .dim { color: var(--text-faint); }
+  .grp { margin-bottom: 14px; }
+  .grp > .gt { font-size: 12.5px; color: var(--accent2); margin: 16px 0 6px; letter-spacing: 0.5px; }
+  footer { margin-top: 40px; color: var(--text-faint); font-size: 11.5px; line-height: 1.7; }
+  #loading { color: var(--text-dim); padding: 40px 0; text-align: center; }
+  @media (max-width: 640px) { td, th { padding: 6px 8px; } td.hide-m { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>数据状态</h1>
+    <span class="sub" id="sub-line">各图层 / 数据源的最近更新时间与可用性</span>
+    <div class="right">
+      <a href="/">← 返回地图</a>
+      <select id="lang"></select>
+    </div>
+  </header>
+  <div class="legend">
+    <span><i class="dot ok"></i>正常</span>
+    <span><i class="dot warn"></i>偏旧</span>
+    <span><i class="dot bad"></i>缺数据 / 过期</span>
+    <span><i class="dot na"></i>未部署 / 外部源</span>
+    <span id="refresh-note" style="margin-left:auto"></span>
+  </div>
+  <div id="loading">加载中…</div>
+  <div id="content" hidden></div>
+  <footer>
+    静态模式说明:模式数据由 GitHub Actions 定时烘焙并发布到 Cloudflare Pages;「烘焙于」为该数据包的生成时刻,「最新时次」为数据里不超过当前时刻的最新预报帧。
+    GIBS 卫星图层为 NASA 外部瓦片直连,本页标注其标称滞后。雷达(RainViewer)、闪电(Blitzortung)为外部实时源。
+  </footer>
+</div>
+<script type="module">
+import { t, has, LANGUAGES, getLang, setLang } from './js/i18n.js';
+
+/* ---------- 图层 → 模式 → 变量 映射(与 main.js LAYERS/varNeeds 同源,手工同步) ---------- */
+const DEF = ['gfs_raw', 'ecmwf_raw', 'aifs_raw', 'gefs_raw'];
+// [id, 中文名, 模式数组, 变量数组, levels?]
+const LAYERS = [
+  ['wind', '风场', DEF, ['u', 'v']],
+  ['gust', '阵风', ['gfs_raw'], ['gust']],
+  ['gustmax', '最大阵风·过程', ['gfs_raw'], ['gustmax']],
+  ['wind100', '100米风', ['gfs_raw'], ['u100', 'v100']],
+  ['barbs', '风向杆', DEF, ['u', 'v']],
+  ['temp', '温度', DEF, ['temp']],
+  ['feels', '体感', DEF, ['temp', 'rh', 'u', 'v']],
+  ['wetbulb', '湿球温度', DEF, ['temp', 'rh']],
+  ['dew', '露点', DEF, ['temp', 'rh']],
+  ['humidity', '湿度', DEF, ['rh'], 1],
+  ['frzlvl', '0°C层高度', ['gfs_raw'], ['frzlvl']],
+  ['solar', '太阳辐射', ['gfs_raw'], ['dswrf']],
+  ['icing', '积冰风险', ['gfs_raw'], ['icing']],
+  ['cat', '晴空湍流', ['gfs_raw'], ['cat']],
+  ['thermals', '热气流·边界层顶', ['gfs_raw'], ['hpbl']],
+  ['cloud', '总云量', DEF, ['cloud']],
+  ['lcdc', '低云', ['gfs_raw'], ['lcdc']],
+  ['mcdc', '中云', ['gfs_raw'], ['mcdc']],
+  ['hcdc', '高云', ['gfs_raw'], ['hcdc']],
+  ['cwat', '云水', ['gfs_raw'], ['cwat']],
+  ['cloudbase', '云底高度', ['gfs_raw'], ['cloudbase']],
+  ['cloudtop', '云顶高度', ['gfs_raw'], ['cloudtop']],
+  ['fog', '雾', DEF, ['rh']],
+  ['precip', '降水', DEF, ['precip']],
+  ['precip24', '降水·24h', ['gfs_raw'], ['precip24']],
+  ['precip72', '降水·72h', ['gfs_raw'], ['precip72']],
+  ['ptype', '相态', DEF, ['temp', 'precip']],
+  ['fzra', '冻雨', ['gfs_raw'], ['temp', 'precip']],
+  ['vis', '能见度', ['gfs_raw'], ['vis']],
+  ['snow', '积雪', ['gfs_snow', 'gfs_raw'], ['snowd']],
+  ['newsnow', '新雪', ['gfs_snow', 'gfs_raw'], ['newsnow']],
+  ['cape', '雷暴 CAPE', ['gfs_raw'], ['cape']],
+  ['cin', '对流抑制', ['gfs_raw'], ['cin']],
+  ['thunder', '雷暴复合', ['gfs_raw'], ['thunder']],
+  ['pwat', '可降水', ['gfs_raw'], ['pwat']],
+  ['ivt', '大气河 IVT', ['gfs_raw'], ['ivt']],
+  ['extprob', '极端天气概率', ['gefs_raw'], ['extprob']],
+  ['pressure', '气压', DEF, ['msl']],
+  ['gph', '位势高度', ['gfs_raw'], ['h'], 1],
+  ['soilw', '土壤湿度', ['gfs_raw'], ['soilw']],
+  ['soilt', '土壤温度', ['gfs_raw'], ['soilt']],
+  ['fire', '火险', ['gfs_raw'], ['fire']],
+  ['ffmc', '可燃物含水率', ['gfs_raw'], ['ffmc']],
+  ['wpd', '风功率密度', ['gfs_raw'], ['wpd']],
+  ['ssta', '海温距平', ['ocean_raw'], ['ssta']],
+  ['ssh', '海面高度', ['currents_raw'], ['ssh']],
+  ['salt', '盐度', ['currents_raw'], ['salt']],
+  ['currents', '海流', ['currents_raw'], ['cur']],
+  ['dust', '沙尘', ['chem_raw'], ['dust']],
+  ['pm25f', 'PM2.5 场', ['chem_raw'], ['pm25']],
+  ['pmtot', 'PM 总量', ['chem_raw'], ['pmtot']],
+  ['so2f', 'SO₂ 场', ['chem_raw'], ['so2']],
+  ['so4f', '硫酸盐', ['chem_raw'], ['so4']],
+  ['nh3f', '氨', ['chem_raw'], ['nh3']],
+  ['ocf', '有机碳(烟)', ['chem_raw'], ['oc']],
+  ['bcf', '黑碳', ['chem_raw'], ['bc']],
+  ['nif', '硝酸盐', ['chem_raw'], ['ni']],
+  ['co2f', '二氧化碳', ['chem_raw'], ['co2']],
+  ['cof', '一氧化碳', ['chem_raw'], ['co']],
+  ['wvh', '波高', ['waves_raw'], ['wvh']],
+  ['wvp', '波周期', ['waves_raw'], ['wvp']],
+  ['swvh', '涌浪1·高度', ['waves_raw'], ['swvh']],
+  ['swvp', '涌浪1·周期', ['waves_raw'], ['swvp']],
+  ['sw2h', '涌浪2·高度', ['waves_raw'], ['sw2h']],
+  ['sw2p', '涌浪2·周期', ['waves_raw'], ['sw2p']],
+  ['sw3h', '涌浪3·高度', ['waves_raw'], ['sw3h']],
+  ['sw3p', '涌浪3·周期', ['waves_raw'], ['sw3p']],
+  ['wwh', '风浪高度', ['waves_raw'], ['wwh']],
+  ['wwp', '风浪周期', ['waves_raw'], ['wwp']],
+  ['wve', '波浪能量', ['waves_raw'], ['wve']],
+  ['sst', '海温', ['ocean_raw'], ['sst']],
+];
+const GROUPS = [
+  ['obs', '观测', null], ['satobs', '卫星观测', null],
+  ['wind', '风', ['wind', 'wind100', 'gust', 'gustmax', 'barbs', 'wpd']],
+  ['temp', '温湿', ['temp', 'feels', 'wetbulb', 'dew', 'humidity', 'frzlvl']],
+  ['sun', '太阳', ['solar']],
+  ['cloud', '云雨', ['cloud', 'cloudbase', 'cloudtop', 'lcdc', 'mcdc', 'hcdc', 'cwat', 'fog', 'precip', 'precip24', 'precip72', 'ptype', 'fzra', 'vis']],
+  ['aviation', '航空', ['icing', 'cat', 'thermals']],
+  ['snow', '雪', ['snow', 'newsnow']],
+  ['conv', '对流气压', ['cape', 'cin', 'thunder', 'pwat', 'ivt', 'extprob', 'pressure', 'gph']],
+  ['ground', '土壤', ['soilw', 'soilt']],
+  ['fire', '火险', ['fire', 'ffmc']],
+  ['ocean', '海洋', ['currents', 'sst', 'ssta', 'ssh', 'salt', 'wvh', 'wvp', 'swvh', 'swvp', 'sw2h', 'sw2p', 'sw3h', 'sw3p', 'wwh', 'wwp', 'wve']],
+  ['air', '空气', null], ['chem', '空气场', null],
+];
+const AQ_LAYERS = [['aqi', '空气质量'], ['pm25', 'PM2.5'], ['pm10', 'PM10'], ['no2', '二氧化氮'], ['o3', '臭氧'], ['so2', '二氧化硫'], ['uv', 'UV 指数']];
+const GIBS_LAYERS = [
+  ['ozone', '总柱臭氧', '每日 · 滞后 1 天'], ['imerg', '卫星降水', '30 分钟(当日可能未出图)'],
+  ['lst', '地表温度', '每日 · 滞后 1 天'], ['smap', '卫星土壤湿', '每日 · 滞后 ~4 天'],
+  ['frozen', '冻土', '每日 · 滞后 ~10 天'], ['ndvi', '植被指数', '8 天合成 · 滞后 ~2 天'],
+  ['aerosol', '气溶胶指数', '每日 · 滞后 1 天'], ['chl', '叶绿素', '每日 · 滞后 1 天'],
+  ['seaice', '海冰浓度', '每日 · 滞后 1 天'], ['vapor', '大气水汽', '每日 · 滞后 1 天'],
+];
+// 观测类数据端点:[显示名, 路径, 绿/黄阈值小时]
+const OBS = [
+  ['站点 / 机场实况', 'obs/latest.json', 3, 8],
+  ['城市空气质量', 'aq/latest.json', 3, 8],
+  ['活跃火点', 'fires/latest.json', 6, 14],
+  ['GLM 卫星闪电', 'glm/latest.json', 1, 3],
+  ['气象预警', 'warnings/latest.json', 3, 8],
+  ['全球地震', 'quakes/latest.json', 3, 8],
+  ['台风 / 飓风', 'tropical/nhc.json', 3, 8],
+  ['空间天气 / 极光', 'swx/latest.json', 3, 8],
+  ['海洋浮标', 'buoys/latest.json', 3, 8],
+  ['大河径流', 'rivers/latest.json', 30, 54],
+  ['潮汐', 'tides/global.json', 30, 54],
+];
+// 模式烘焙新鲜度阈值(小时):绿 / 黄
+const MODEL_FRESH = { gfs_raw: 12, gefs_raw: 12, ecmwf_raw: 15, aifs_raw: 15, waves_raw: 12, ocean_raw: 48, chem_raw: 40, currents_raw: 48, gfs_snow: 30 };
+const MODEL_NAME = { gfs_raw: 'GFS 0.5°', gefs_raw: 'GEFS 0.5°', ecmwf_raw: 'ECMWF IFS', aifs_raw: 'ECMWF AIFS', waves_raw: 'GFS Wave', ocean_raw: 'OISST 海温', chem_raw: 'GEOS-5 化学', currents_raw: 'HYCOM 海流', gfs_snow: 'GFS 雪包(高分辨率)' };
+
+/* ---------- 工具 ---------- */
+const $ = (s) => document.querySelector(s);
+const fmtAgo = (ms) => {
+  if (!Number.isFinite(ms)) return '—';
+  const h = ms / 3600e3;
+  if (h < 1) return `${Math.max(1, Math.round(ms / 60e3))} 分钟前`;
+  if (h < 48) return `${h < 10 ? h.toFixed(1).replace(/\.0$/, '') : Math.round(h)} 小时前`;
+  return `${(h / 24).toFixed(1)} 天前`;
+};
+const fmtClock = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dotCls = (lvl) => lvl === 2 ? 'ok' : lvl === 1 ? 'warn' : lvl === 0 ? 'bad' : 'na';
+/* generated 字段归一化到毫秒时间戳(数值按秒/毫秒自适应,字符串按 ISO 解析) */
+const genMs = (g) => g == null ? NaN : typeof g === 'number' ? (g > 1e12 ? g : g * 1000) : Date.parse(g) || NaN;
+const label = (id, fallback) => has(`layer.${id}`) ? t(`layer.${id}`) : fallback;
+const ZH = () => /^zh/i.test(getLang() || 'zh-CN');
+const obsBase = location.origin === 'null' ? 'https://fengyun-ak4.pages.dev' : '';
+const jget = (p) => fetch(`${obsBase}${p}`, { cache: 'no-cache' }).then((r) => (r.ok && (r.headers.get('content-type') || '').includes('json') ? r.json() : null)).catch(() => null);
+
+/* 解析 runKey → 周期起时(UTC) */
+function runKeyMs(runKey) {
+  const m = /^(\d{8})-(\d{2})$/.exec(String(runKey || ''));
+  if (!m) return NaN;
+  return Date.parse(`${m[1].slice(0, 4)}-${m[1].slice(4, 6)}-${m[1].slice(6, 8)}T${m[2]}:00:00Z`);
+}
+
+async function main() {
+  const t0 = Date.now();
+  const index = await jget('/dist/data/index.json');
+  const models = (index && index.models) || {};
+  const metas = {};
+  await Promise.all(Object.entries(models).map(async ([m, e]) => {
+    metas[m] = await jget(`/dist/data/${m}/${e.runKey}/meta.json`);
+  }));
+  const obsData = {};
+  await Promise.all(OBS.map(async ([, p]) => { obsData[p] = await jget(`/dist/data/${p}`); }));
+
+  /* 渲染模式概览 */
+  let html = '';
+  const cards = Object.entries(models).map(([m, e]) => {
+    const meta = metas[m] || {};
+    const gen = genMs(meta.generated);
+    const times = (meta.times || []).map((x) => Date.parse(x)).filter(Number.isFinite);
+    const now = Date.now();
+    const last = times.length ? Math.max(...times.filter((x) => x <= now + 3600e3)) : NaN;
+    const fresh = MODEL_FRESH[m] || 14;
+    const ageH = Number.isFinite(gen) ? (now - gen) / 3600e3 : NaN;
+    const lvl = !Number.isFinite(ageH) ? 0 : ageH <= fresh ? 2 : ageH <= fresh * 2.2 ? 1 : 0;
+    const varCount = Object.keys(meta.vars || {}).length;
+    const oldFmt = meta.format !== 'per-var';
+    return `<div class="card"><i class="dot ${dotCls(lvl)}"></i><b>${esc(MODEL_NAME[m] || m)}</b>
+      <span class="age" title="数据包烘焙时间">${Number.isFinite(ageH) ? esc(fmtAgo(now - gen)) : '—'}</span>
+      <div class="row">run <code>${esc(e.runKey)}</code> · 烘焙于 ${Number.isFinite(gen) ? esc(fmtClock(gen)) : '—'}</div>
+      <div class="row">${times.length ? `${times.length} 帧 · 最新时次 ${esc(fmtClock(last))}(${esc(fmtAgo(now - last))})` : '<span class="dim">无时间帧</span>'} · ${oldFmt ? '<span class="dim">全量旧格式</span>' : `${varCount} 变量`}</div>
+    </div>`;
+  }).join('');
+  html += `<h2>模式数据 <small>index.json + 各模式 meta.json</small></h2><div class="cards">${cards}</div>`;
+
+  /* 渲染逐图层状态 */
+  const lvlKeyCount = (meta, vk) => Object.keys(meta.vars || {}).filter((k) => k === vk || k.startsWith(vk + '@')).length;
+  html += `<h2>主图层 <small>按图层分组;每格一个数据模式,圆点 = 变量齐全度,括号 = 缺失变量</small></h2>`;
+  const layerRow = ([id, zh, lmodels, vars, levels]) => {
+    const chips = lmodels.map((m) => {
+      const meta = metas[m];
+      if (!meta) return `<span class="chip" title="index.json 无此模式"><i class="dot na"></i>${esc((MODEL_NAME[m] || m).split(' ')[0])} 未部署</span>`;
+      const vlist = (meta.vars || {});
+      if (meta.format !== 'per-var') {
+        return `<span class="chip" title="旧格式全量包,变量不单列"><i class="dot ok"></i>${esc((MODEL_NAME[m] || m).split(' ')[0])} 全量包</span>`;
+      }
+      const lvlCount = levels ? lvlKeyCount(meta, vars[0]) : 0;
+      const miss = levels ? (lvlCount ? [] : vars) : vars.filter((vk) => !vlist[vk]);
+      const have = levels ? `${lvlCount} 层` : `${vars.length - miss.length}/${vars.length}`;
+      const gen = genMs(meta.generated);
+      const cls = miss.length ? 'miss' : '';
+      const tip = miss.length ? `缺失: ${miss.join(', ')}` : '变量齐全';
+      const short = (MODEL_NAME[m] || m).split(' ')[0];
+      return `<span class="chip ${cls}" title="${esc(tip)} · 烘焙 ${Number.isFinite(gen) ? esc(fmtAgo(Date.now() - gen)) : '—'}"><i class="dot ${miss.length ? 'bad' : dotCls(Number.isFinite(gen) ? 2 : 0)}"></i>${esc(short)} ${esc(have)}${miss.length ? `(${esc(miss.join(','))})` : ''}</span>`;
+    }).join('');
+    return `<tr><td class="name">${esc(label(id, zh))}</td><td>${chips}</td></tr>`;
+  };
+  for (const [gid, gzh, ids] of GROUPS) {
+    if (!ids) continue; // 观测/卫星/空气分组由下方专属区块渲染
+    const rows = ids.map((id) => LAYERS.find((l) => l[0] === id)).filter(Boolean).map(layerRow).join('');
+    if (!rows) continue;
+    html += `<div class="grp"><div class="gt">${esc(has(`group.${gid}`) ? t(`group.${gid}`) : gzh)}</div><table><tbody>${rows}</tbody></table></div>`;
+  }
+  const grouped = new Set(GROUPS.flatMap(([, , ids]) => ids || []));
+  const rest = LAYERS.filter((l) => !grouped.has(l[0]));
+  if (rest.length) html += `<div class="grp"><div class="gt">其他</div><table><tbody>${rest.map(layerRow).join('')}</tbody></table></div>`;
+
+  /* 空气质量(城市 AQ 端点) */
+  const aqMeta = obsData['aq/latest.json'];
+  const aqGen = aqMeta ? genMs(aqMeta.generated) : NaN;
+  html += `<div class="grp"><div class="gt">${esc(has('group.air') ? t('group.air') : '空气')}(${ZH() ? '城市预报' : 'city forecast'})</div><table><tbody>${
+    AQ_LAYERS.map(([id, zh]) => `<tr><td class="name">${esc(label(id, zh))}</td><td><span class="chip" title="Open-Meteo Air Quality 烘焙包"><i class="dot ${dotCls(Number.isFinite(aqGen) ? ((Date.now() - aqGen) / 3600e3 <= 8 ? 2 : 0) : 0)}"></i>AQ 烘焙包 ${Number.isFinite(aqGen) ? esc(fmtAgo(Date.now() - aqGen)) : '端点缺失'}</span></td></tr>`).join('')
+  }</tbody></table></div>`;
+
+  /* GIBS 外部瓦片 */
+  html += `<div class="grp"><div class="gt">${esc(has('group.satobs') ? t('group.satobs') : '卫星观测')}(NASA GIBS ${ZH() ? '外部瓦片直连 · 标称滞后' : 'external tiles · nominal lag'})</div><table><tbody>${
+    GIBS_LAYERS.map(([id, zh, note]) => `<tr><td class="name">${esc(label(id, zh))}</td><td><span class="chip"><i class="dot na"></i>${esc(note)}</span></td></tr>`).join('')
+  }</tbody></table></div>`;
+
+  /* 观测叠加端点 */
+  html += `<h2>观测与叠加数据 <small>各 latest.json 端点</small></h2><table><tbody>`;
+  for (const [name, p, okH, warnH] of OBS) {
+    const d = obsData[p];
+    const gen = d ? genMs(d.generated) : NaN;
+    const ageH = Number.isFinite(gen) ? (Date.now() - gen) / 3600e3 : NaN;
+    const lvl = !Number.isFinite(ageH) ? 0 : ageH <= okH ? 2 : ageH <= warnH ? 1 : 0;
+    html += `<tr><td class="name">${esc(name)}</td><td><span class="chip"><i class="dot ${dotCls(lvl)}"></i>${Number.isFinite(gen) ? `${esc(fmtAgo(Date.now() - gen))} · ${esc(fmtClock(gen))}` : '端点缺失'}</span><span class="chip hide-m dim">${esc(p)}</span></td></tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `<h2>外部实时源 <small>浏览器直连,无本地文件</small></h2><table><tbody>
+    <tr><td class="name">雷达</td><td><span class="chip"><i class="dot na"></i>RainViewer,约 10 分钟更新</span></td></tr>
+    <tr><td class="name">闪电</td><td><span class="chip"><i class="dot na"></i>Blitzortung WebSocket 实时(含 GOES GLM 融合)</span></td></tr>
+    <tr><td class="name">卫星云图</td><td><span class="chip"><i class="dot na"></i>GOES / 向日葵9 直连,10 分钟</span></td></tr>
+    <tr><td class="name">晨昏线</td><td><span class="chip"><i class="dot na"></i>前端实时计算</span></td></tr>
+  </tbody></table>`;
+
+  $('#content').innerHTML = html;
+  $('#content').hidden = false;
+  $('#loading').hidden = true;
+  $('#refresh-note').textContent = `${t('status.updatedAt') || '刷新于'} ${fmtClock(Date.now())} · 5 分钟自动刷新`;
+  console.log(`status: rendered in ${Date.now() - t0} ms`);
+}
+
+/* 语言切换 */
+const langSel = $('#lang');
+for (const l of LANGUAGES) {
+  const o = document.createElement('option');
+  o.value = l.code; o.textContent = l.label;
+  langSel.appendChild(o);
+}
+langSel.value = getLang();
+langSel.addEventListener('change', () => { setLang(langSel.value); location.reload(); });
+
+main();
+setInterval(main, 5 * 60e3);
+</script>
+</body>
+</html>

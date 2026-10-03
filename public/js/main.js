@@ -1,7 +1,7 @@
 /* 风云地球 — 主控:地图、图层状态、格点调度、时间轴联动 */
 import { Grid, getView, clamp } from './util.js';
-import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, SOLAR, COCM, ICING, CATC, FFMC, EXTPROB, gphCmap, CUR, THUNDER, GO3 } from './colormaps.js';
-import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel, staticAvailReady, isStatic } from './api.js';
+import { WIND, TEMP, MSL, PRECIP, CLOUD, RH, RADAR, DEW, PTYPE, CAPE, SNOWCM, VIS, PWAT, CWAT, NEWSNOW, SOILW, FRZLVL, CIN, WAVES, WPER, AQI, SST, PM25, NO2, O3, SO2, UVI, WENERGY, FOG, PACCU, FIRE, WPD, SSTA, CO2F, DUST, SO4F, NH3F, SMOKE, NIF, IMERRG, GLST, GSMAP, GFROZEN, GNDVI, GAOD, GCHL, GICE, GVAP, FIRECONF, SOLAR, COCM, ICING, CATC, FFMC, EXTPROB, gphCmap, CUR, THUNDER, GO3, SSH, SALT, IVT, FZRA } from './colormaps.js';
+import { initApi, fetchGrid, clearGridCache, ensureGridVars, staticAvailableModels, staticHasModel, staticAvailReady, staticModelVars, isStatic } from './api.js';
 import { ParticleLayer } from './layers/particles.js';
 import { ScalarLayer } from './layers/scalar.js';
 import { IsobarLayer } from './layers/isobars.js';
@@ -525,11 +525,24 @@ function modelHasData(m) {
   return staticHasModel(m);
 }
 /* 为图层选出一个有数据的模式:当前模式提供则沿用(不折腾),
- * 专用图层(autoModel)优先升级专用模式,否则按候选优先级取首个可用者 */
+ * 专用图层(autoModel)优先升级专用模式,否则按候选优先级取首个可用者。
+ * 变量级门控:模式在线但 meta 未声明该图层变量(如 ECMWF 无 rh)时自动换模式;
+ * 所有候选都缺变量时退回"模式存在"判定,配合烘焙兜底提示而非整层不可用。 */
+async function layerVarsOk(def, m) {
+  if (!staticAvailReady()) return true; // 服务端模式或清单未就绪:不折腾
+  const keys = await staticModelVars(m);
+  if (!keys) return true; // 模式不在索引或非静态模式:放行
+  const needs = varNeeds(def);
+  if (!needs.length) return true; // special 图层(雷达/AQI/GIBS)不消费模式变量
+  return needs.some((vk) => keys.has(vk) || [...keys].some((k) => k.startsWith(vk + '@')));
+}
 async function resolveLayerModel(def) {
   await ensureStaticAvail();
   const cands = modelsForLayer(def, { inclFallback: true });
   if (def.autoModel && cands.length && modelHasData(cands[0])) return cands[0];
+  const candsOk = await Promise.all(cands.map((m) => layerVarsOk(def, m)));
+  if (cands.includes(state.model) && modelHasData(state.model) && candsOk[cands.indexOf(state.model)]) return state.model;
+  for (let i = 0; i < cands.length; i++) if (modelHasData(cands[i]) && candsOk[i]) return cands[i];
   if (cands.includes(state.model) && modelHasData(state.model)) return state.model;
   for (const m of cands) if (modelHasData(m)) return m;
   return null;
@@ -580,6 +593,7 @@ async function setLayer(id, silent = false) {
   }
   const switched = target !== state.model;
   if (switched) applyModelCore(target);
+  if (state.layer !== id) noDataWarnedFor = ''; // 换层后重新允许"无数据"提示
   state.layer = id;
   /* 位势高度默认 500 hPa(表面无此要素) */
   if (id === 'gph' && !state.level) { state.level = 500; syncUrl(); }
@@ -766,6 +780,8 @@ function scheduleGridFetch(delay = 450) {
   clearTimeout(fetchTimer);
   fetchTimer = setTimeout(fetchGridNow, delay);
 }
+let wind100HintShown = false; // u100 未烘焙期间只提示一次(回落 10 米风)
+let noDataWarnedFor = '';     // 图层整组变量缺失提示去重(切到别的图层再切回可再提示)
 
 async function fetchGridNow() {
   const spec = gridSpec();
@@ -778,10 +794,17 @@ async function fetchGridNow() {
   try {
     const needs = needsFor(layerById(state.layer));
     const { grid } = await fetchGrid({ ...spec, model: state.model, level: state.level, needs });
-    /* 100 米风层:把 u100/v100 别名成 u/v,标量场/粒子/采样全链路按风场消费 */
+    /* 100 米风层:把 u100/v100 别名成 u/v,标量场/粒子/采样全链路按风场消费;
+     * u100 尚未烘焙时回落 10 米风并提示,避免整屏无数据 */
     if (state.layer === 'wind100' && grid.vars && grid.vars.u100) {
       grid.vars.u = grid.vars.u100;
       grid.vars.v = grid.vars.v100;
+    } else if (state.layer === 'wind100' && grid.vars && !grid.vars.u) {
+      await ensureGridVars(grid, ['u', 'v']);
+      if (!wind100HintShown) {
+        wind100HintShown = true;
+        toast(t('toast.wind100Fallback'));
+      }
     }
     // 请求期间视图又变了:丢弃(已缓存,稍后会重新取)
     const latest = gridSpec();
@@ -836,6 +859,16 @@ function applyGrid(grid, key) {
     : Promise.resolve();
   pending.then(() => {
     if (state.grid !== grid) return; // 期间已切换到更新的格点
+    /* 变量级兜底:meta 未声明该图层任何变量(烘焙尚未覆盖)→ 明确提示而非静默黑屏
+     * (按图层去重,平移/缩放不重复打扰) */
+    const defNow = layerById(state.layer);
+    const dataNeeds = varNeeds(defNow);
+    if (dataNeeds.length && !dataNeeds.some((vk) => grid.vars[vk] || grid.vars[vk.split('@')[0]])) {
+      if (noDataWarnedFor !== defNow.id) {
+        noDataWarnedFor = defNow.id;
+        toast(t('toast.layerNoData', { name: defNow.label }));
+      }
+    }
     if (state.pendingTime) {
       const t = state.pendingTime;
       state.pendingTime = null;
