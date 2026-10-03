@@ -328,6 +328,8 @@ function ecmwfLike(id, label, product, concurrency) {
     label,
     product, // 'ifs/0p25/oper' | 'aifs-single/0p25/oper'
     varKeys: ['u', 'v', 'temp', 'rh', 'msl', 'precip', 'cloud', 'gust'],
+    rhIsDewpoint: true, // rh 变量实为 2d 露点(开尔文,conv 直通入库)→ 采样时换算湿度(ecmwf/aifs 同源)
+    tpCumulative: true, // tp 为起报起累积量 → 采样时差分为 mm/h 速率
     grid: { ni: 720, nj: 361, lon0: 0, dlon: 0.5, lat0: 90, dlat: 0.5 }, // 0.25 源降采样到 0.5 存储
     maxF: 168,
     stepH: 3,
@@ -384,9 +386,9 @@ const ECMWF_VARS = {
   u: { name: '10u', scale: 100, conv: (v) => v },
   v: { name: '10v', scale: 100, conv: (v) => v },
   temp: { name: '2t', scale: 100, conv: (v) => v - 273.15 },
-  rh: { name: '2d', scale: 100, conv: null }, // 露点 → RH,在 后处理 中计算
+  rh: { name: '2d', scale: 100, conv: null }, // 露点(开尔文,直通入库)→ 采样时换算湿度(rawGrid/rawPoint)
   msl: { name: 'msl', scale: 10, conv: (v) => v / 100 },
-  precip: { name: 'tp', scale: 100, conv: (v) => v * 1000 }, // m 累积 → mm(3h)
+  precip: { name: 'tp', scale: 100, conv: (v) => v * 1000 }, // m 累积 → mm 累积量(采样时差分为速率,勿在此换算)
   cloud: { name: 'tcc', scale: 100, conv: (v) => v * 100 },  // 0-1 → %
   gust: { name: '__none__', scale: 100, conv: (v) => v, absent: true }, // 开放数据无阵风场,阵风图层 pin gfs_raw
 };
@@ -531,11 +533,29 @@ class ModelEngine {
         p++;
       }
     }
-    // ECMWF rh 由露点后处理(此处 temp/rh 均已采样,rh 存的是露点 → 转换)
-    if (this.def.id === 'ecmwf_raw') {
+    // rh 实为 2d 露点(开尔文,conv 直通入库)→ 采样后统一换算湿度;
+    // 在采样侧转换(而非入库时)是为了兼容已缓存捆包,旧数据无需重摄
+    if (this.def.rhIsDewpoint) {
       for (let i = 0; i < src.rh.length; i++) {
-        const td = src.rh[i], tt = src.temp[i];
-        src.rh[i] = rhFromDewpoint(tt, td);
+        src.rh[i] = rhFromDewpoint(src.temp[i], src.rh[i] - 273.15);
+      }
+    }
+    // tp 为起报起累积量 → 按相邻帧差分为 mm/h 速率(与 GFS PRATE 同约定);
+    // 跨 run 累积归零、3h/6h 帧距变化自动适配;缺帧保留上一有效累积,下一有效帧按实际间隔差分
+    if (this.def.tpCumulative) {
+      const prevCum = new Float64Array(nP).fill(NaN);
+      const prevMs = new Float64Array(nP);
+      const prevRun = new Array(nP).fill('');
+      for (let t = 0; t < times.length; t++) {
+        const ms = times[t].ms, rk = times[t].runKey;
+        for (let p = 0; p < nP; p++) {
+          const cum = src.precip[t * nP + p];
+          if (Number.isNaN(cum)) continue;
+          if (prevRun[p] !== rk) { prevRun[p] = rk; prevCum[p] = 0; prevMs[p] = ms - 3 * 3600e3; }
+          const gapH = Math.max(1e-6, (ms - prevMs[p]) / 3600e3);
+          src.precip[t * nP + p] = Math.max(0, cum - prevCum[p]) / gapH;
+          prevCum[p] = cum; prevMs[p] = ms;
+        }
       }
     }
 
@@ -567,13 +587,26 @@ class ModelEngine {
     const times = run.times;
     const series = [];
     const NULLS = { temp: NaN, rh: NaN, precip: NaN, cloud: NaN, msl: NaN, u: NaN, v: NaN, gust: NaN };
+    let prevCum = NaN, prevMs = 0, prevRun = '';
     for (const t of times) {
       const s2 = this.sampleAll(t.runKey, t.step, lat, lon) || NULLS;
-      series.push({
+      const row = {
         ms: t.ms,
         temp: s2.temp, rh: s2.rh, precip: s2.precip, cloud: s2.cloud,
         msl: s2.msl, u: s2.u, v: s2.v, gust: s2.gust,
-      });
+      };
+      // 与 rawGrid 同步的两项采样后处理(rh 露点换算 / tp 累积差分),见 rawGrid 内注释
+      if (this.def.rhIsDewpoint) row.rh = rhFromDewpoint(row.temp, row.rh - 273.15);
+      if (this.def.tpCumulative) {
+        const cum = row.precip;
+        if (Number.isFinite(cum)) {
+          if (t.runKey !== prevRun) { prevRun = t.runKey; prevCum = 0; prevMs = t.ms - 3 * 3600e3; }
+          const gapH = Math.max(1e-6, (t.ms - prevMs) / 3600e3);
+          row.precip = Math.max(0, cum - prevCum) / gapH;
+          prevCum = cum; prevMs = t.ms;
+        } else row.precip = NaN;
+      }
+      series.push(row);
     }
     const spd = (x) => Number.isNaN(x?.u) || Number.isNaN(x?.v) ? NaN : Math.hypot(x.u, x.v);
     const dirOf = (x) => Number.isNaN(x?.u) || Number.isNaN(x?.v) ? NaN : Math.round(((Math.atan2(-x.u, -x.v) * 180) / Math.PI + 360) % 360);

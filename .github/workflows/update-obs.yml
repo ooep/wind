@@ -12,6 +12,9 @@ concurrency:
   group: data-obs
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   ingest-and-publish:
     runs-on: ubuntu-latest
@@ -30,20 +33,39 @@ jobs:
       - name: 安装 python 依赖(GLM netCDF4 解析)
         run: pip install --quiet netCDF4 numpy
 
-      - name: 抓取并烘焙观测数据
+      - name: 抓取并烘焙观测数据(单源失败不株连其余源)
         run: |
-          node tools/bake-obs.js dist/data
-          node tools/bake-taf.js dist/data
-          node tools/bake-tropical.js dist/data
-          node tools/bake-aq.js dist/data
-          node tools/bake-fires.js dist/data
-          node tools/bake-warnings.js dist/data
-          node tools/bake-quakes.js dist/data
-          node tools/bake-swx.js dist/data
-          node tools/bake-buoys.js dist/data
-          node tools/bake-rivers.js dist/data
-          node tools/bake-tides.js dist/data
-          python3 tools/bake-glm.py dist/data
+          b() { "$@" || echo "::warning::烘焙失败(保留现有数据): $*"; }
+          b node tools/bake-obs.js dist/data
+          b node tools/bake-taf.js dist/data
+          b node tools/bake-tropical.js dist/data
+          b node tools/bake-aq.js dist/data
+          b node tools/bake-fires.js dist/data
+          b node tools/bake-warnings.js dist/data
+          b node tools/bake-quakes.js dist/data
+          b node tools/bake-swx.js dist/data
+          b node tools/bake-buoys.js dist/data
+          b node tools/bake-rivers.js dist/data
+          b node tools/bake-tides.js dist/data
+          b python3 tools/bake-glm.py dist/data
+
+      # Pages 部署是全量替换:某源失败时其文件不在 artifact 里会被从生产抹掉,
+      # 故从生产拉回上一版兜底(bake-glm 静稳窗口 / 卫星延迟属常态,不该丢数据)
+      - name: 失败源回填(从生产拉旧数据)
+        run: |
+          base="https://fengyun-ak4.pages.dev/dist/data"
+          for spec in "obs latest.json" "tropical nhc.json" "aq latest.json" "fires latest.json" \
+                      "warnings latest.json" "quakes latest.json" "swx latest.json" \
+                      "buoys latest.json" "rivers latest.json" "tides latest.json global.json" \
+                      "glm latest.json"; do
+            set -- $spec; d="$1"; shift
+            mkdir -p "dist/data/$d"
+            for f in "$@"; do
+              if [ ! -s "dist/data/$d/$f" ]; then
+                curl -sf --max-time 30 "$base/$d/$f" -o "dist/data/$d/$f" && echo "  [fill] $d/$f ← 生产旧数据" || true
+              fi
+            done
+          done
 
       - name: 上传数据 artifact(deploy-data 统一组装部署)
         uses: actions/upload-artifact@v4

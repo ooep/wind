@@ -97,6 +97,7 @@ export class ForecastPanel {
     this.el.hidden = false;
     this.title.textContent = name || t('panel.locating');
     this.coords.textContent = `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
+    this._coordsBase = this.coords.textContent; // _render 反复重写坐标行(海拔后缀不可累加)
     this.content.hidden = true;
     this.loading.style.display = 'block';
     this._updateFav();
@@ -149,9 +150,8 @@ export class ForecastPanel {
     const cur = d.current;
     const [desc, icon] = wmo(cur.weather_code);
     this.title.textContent = `${desc} · ${Math.round(toDeg(cur.temperature_2m))}°`;
-    if (Number.isFinite(d.elevation)) {
-      this.coords.textContent += t('panel.elev', { n: Math.round(d.elevation) });
-    }
+    this.coords.textContent = (this._coordsBase || '')
+      + (Number.isFinite(d.elevation) ? t('panel.elev', { n: Math.round(d.elevation) }) : '');
     const dir = compass(cur.wind_direction_10m);
     const staleNote = d.stale
       ? t('panel.cachedAt', { t: `${p2(new Date(d.cachedAt * 1000).getHours())}:${p2(new Date(d.cachedAt * 1000).getMinutes())}` })

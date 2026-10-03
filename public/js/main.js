@@ -534,7 +534,9 @@ async function layerVarsOk(def, m) {
   if (!keys) return true; // 模式不在索引或非静态模式:放行
   const needs = varNeeds(def);
   if (!needs.length) return true; // special 图层(雷达/AQI/GIBS)不消费模式变量
-  return needs.some((vk) => keys.has(vk) || [...keys].some((k) => k.startsWith(vk + '@')));
+  /* 派生图层(feels/湿球/露点等)任一输入缺失即整屏 NaN → 按"全部就绪"判定;
+   * 所有候选都不齐时由 resolveLayerModel 末尾退回"模式存在",配合缺变量提示兜底 */
+  return needs.every((vk) => keys.has(vk) || [...keys].some((k) => k.startsWith(vk + '@')));
 }
 async function resolveLayerModel(def) {
   await ensureStaticAvail();
@@ -647,6 +649,8 @@ async function setLayer(id, silent = false) {
       loadingEl.hidden = true;
     }
   }
+  /* wind100 别名缓存路径:进入时别名,离开时还原(新抓取路径在 fetchGridNow 内统一处理) */
+  if (state.grid) setWindAlias(state.grid, state.layer === 'wind100');
   /* 模式自动切换或首启后格点为空 → 立即拉取(常规平移缩放仍由 moveend 调度) */
   if (!state.grid) scheduleGridFetch(0);
   refreshModelPill();
@@ -783,6 +787,20 @@ function scheduleGridFetch(delay = 450) {
 let wind100HintShown = false; // u100 未烘焙期间只提示一次(回落 10 米风)
 let noDataWarnedFor = '';     // 图层整组变量缺失提示去重(切到别的图层再切回可再提示)
 
+/* 100 米风层的视图态别名:u100/v100 → u/v(标量场/粒子/采样全链路按风场消费)。
+ * 别名前先存原 10 米风引用,切离该层时还原 —— 别名只作用于当前视图,
+ * 不破坏 staticGrids 共享缓存里的数据态(否则风场/风向杆/点位面板全被污染成 100 米风) */
+function setWindAlias(grid, on) {
+  const v = grid && grid.vars;
+  if (!v) return;
+  if (on && v.u100 && v.v100) {
+    if (v.u !== v.u100) { v.__u10 = v.u; v.__v10 = v.v; v.u = v.u100; v.v = v.v100; }
+  } else if (!on && v.__u10) {
+    v.u = v.__u10; v.v = v.__v10;
+    delete v.__u10; delete v.__v10;
+  }
+}
+
 async function fetchGridNow() {
   const spec = gridSpec();
   const key = specKey(spec);
@@ -791,20 +809,19 @@ async function fetchGridNow() {
   state.fetchingKey = key;
   loadingEl.hidden = false;
   let rateLimited = false;
+  let failed = false;
   try {
     const needs = needsFor(layerById(state.layer));
     const { grid } = await fetchGrid({ ...spec, model: state.model, level: state.level, needs });
-    /* 100 米风层:把 u100/v100 别名成 u/v,标量场/粒子/采样全链路按风场消费;
-     * u100 尚未烘焙时回落 10 米风并提示,避免整屏无数据 */
-    if (state.layer === 'wind100' && grid.vars && grid.vars.u100) {
-      grid.vars.u = grid.vars.u100;
-      grid.vars.v = grid.vars.v100;
-    } else if (state.layer === 'wind100' && grid.vars && !grid.vars.u) {
+    /* wind100 别名统一入口:进入别名 u100→u,离开(或复用被别名过的缓存格点)自动还原;
+     * u100 尚未烘焙时保持 10 米风渲染并提示一次,避免整屏无数据 */
+    if (state.layer === 'wind100' && !grid.vars.u100 && !grid.vars.u) {
       await ensureGridVars(grid, ['u', 'v']);
-      if (!wind100HintShown) {
-        wind100HintShown = true;
-        toast(t('toast.wind100Fallback'));
-      }
+    }
+    setWindAlias(grid, state.layer === 'wind100');
+    if (state.layer === 'wind100' && !grid.vars.u100 && !wind100HintShown) {
+      wind100HintShown = true;
+      toast(t('toast.wind100Fallback'));
     }
     // 请求期间视图又变了:丢弃(已缓存,稍后会重新取)
     const latest = gridSpec();
@@ -835,10 +852,14 @@ async function fetchGridNow() {
     toast(t('toast.gridFail', { msg }));
     clearTimeout(fetchTimer);
     fetchTimer = setTimeout(() => { state.fetchingKey = ''; fetchGridNow(); }, 15_000);
+    failed = true;
     return;
   } finally {
-    state.fetchingKey = '';
     loadingEl.hidden = true;
+    /* 失败退避:15s 定时器负责复位 fetchingKey 并重试;
+     * 此处若照常清 fetchingKey / 200ms 补抓会把退避定时器清掉,变成重试风暴 */
+    if (failed) return;
+    state.fetchingKey = '';
     // 若排队期间视图变化,补一次(限流时除外)
     if (!rateLimited && specKey(gridSpec()) !== state.gridKey) scheduleGridFetch(200);
   }
@@ -859,11 +880,11 @@ function applyGrid(grid, key) {
     : Promise.resolve();
   pending.then(() => {
     if (state.grid !== grid) return; // 期间已切换到更新的格点
-    /* 变量级兜底:meta 未声明该图层任何变量(烘焙尚未覆盖)→ 明确提示而非静默黑屏
-     * (按图层去重,平移/缩放不重复打扰) */
+    /* 变量级兜底:meta 未声明该图层所需变量(烘焙尚未覆盖/软守卫剔除)→ 明确提示而非静默黑屏
+     * 派生图层任一输入缺失即整屏 NaN,故"缺任一必需项"即提示(按图层去重,平移/缩放不重复打扰) */
     const defNow = layerById(state.layer);
     const dataNeeds = varNeeds(defNow);
-    if (dataNeeds.length && !dataNeeds.some((vk) => grid.vars[vk] || grid.vars[vk.split('@')[0]])) {
+    if (dataNeeds.length && dataNeeds.some((vk) => !(grid.vars[vk] || grid.vars[vk.split('@')[0]]))) {
       if (noDataWarnedFor !== defNow.id) {
         noDataWarnedFor = defNow.id;
         toast(t('toast.layerNoData', { name: defNow.label }));
@@ -1122,8 +1143,12 @@ document.getElementById('loc-btn').addEventListener('click', () => {
 
 /* ---------- Toast ---------- */
 let toastTimer = null;
+let toastLastMsg = '', toastLastAt = 0; // 同文案 4 秒内去重(高频重试场景避免刷屏)
 function toast(msg, ms = 5000) {
   const el = document.getElementById('toast');
+  const now = Date.now();
+  if (msg === toastLastMsg && now - toastLastAt < 4000 && !el.hidden) return;
+  toastLastMsg = msg; toastLastAt = now;
   el.textContent = msg;
   el.hidden = false;
   clearTimeout(toastTimer);

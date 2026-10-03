@@ -16,7 +16,8 @@ function eccDecode(msg) {
   return new Promise((resolve, reject) => {
     const tmp = path.join(os.tmpdir(), `ecc-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.grib`);
     fs.writeFileSync(tmp, msg);
-    execFile(PY, [path.join(__dirname, 'ecc.py'), tmp], { maxBuffer: 512 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
+      // 无超时则 eccodes 对畸形消息挂起时 promise 永不 settle,CI 整轮烧到 timeout / live 引擎假死
+      execFile(PY, [path.join(__dirname, 'ecc.py'), tmp], { maxBuffer: 512 * 1024 * 1024, encoding: 'buffer', timeout: 60_000, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
       fs.unlink(tmp, () => {});
       if (err) {
         reject(new Error(`ecc 解码失败: ${(stderr || err.message).toString().slice(0, 200)}`));

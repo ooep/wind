@@ -116,10 +116,12 @@ export class LightningLayer {
       return;
     }
     this.ws = ws;
+    ws.binaryType = 'arraybuffer'; // 服务端推二进制 LZW 帧:默认 Blob 不可迭代,lzwDecode 会静默抛错
     ws.onopen = () => { ws.send('{"a":111}'); };
     ws.onmessage = (e) => {
       try {
-        const j = JSON.parse(lzwDecode(e.data));
+        const text = typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data);
+        const j = JSON.parse(lzwDecode(text));
         if (typeof j.lat === 'number' && typeof j.lon === 'number' && j.time) {
           this.strikes.push({ t: Math.round(j.time / 1e6), lat: j.lat, lon: j.lon, pol: j.pol });
           if (this.strikes.length > 12000) this.strikes.splice(0, 4000);

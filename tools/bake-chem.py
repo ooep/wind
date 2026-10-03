@@ -4,7 +4,7 @@ GEOS-5 FP 化学场烘焙(nullschool 空气质量组同源数据):
 NASA GMAO OPeNDAP 免账号直读(0.3125°×0.25°,3 小时步长,发布滞后 ~4h)
   - tavg3_2d_aer_Nx:GOCART 气溶胶地表质量浓度 kg/m³(沙尘/PM/硫酸盐/SO2/NH3/OC/BC/硝酸盐)
   - tavg3_2d_chm_Nx:CO2 地表浓度(已是 ppmv,免换算)
-→ 降采样 0.5° → per-var 静态包(dist/data/chem_raw/<runKey>/)。
+→ 降采样 0.5°×0.625°(GEOS 经向 0.3125° 隔列)→ per-var 静态包(dist/data/chem_raw/<runKey>/)。
 
 用法:python3 tools/bake-chem.py dist/data
 产物:chem_raw/<YYYYMMDD>-<HH>/meta.json + v_*.json(与 build-static per-var 格式一致)
@@ -23,7 +23,7 @@ from netCDF4 import num2date
 BASE = 'https://opendap.nccs.nasa.gov/dods/GEOS-5/fp/0.25_deg/assim/'
 SRC = {'aer': BASE + 'tavg3_2d_aer_Nx', 'chm': BASE + 'tavg3_2d_chm_Nx'}
 
-NI, NJ = 576, 361   # 0.5° 全球网格(lon 0..359.5 / lat 90..-90)
+NI, NJ = 576, 361   # 全球网格:lat 90..-90(0.5°)/ lon 0..359.375(0.625°,GEOS 经向 0.3125° 隔列采样)
 FRAMES = 2          # 取最近 2 个共同时次(当前 + 3h 前)
 
 # 图层键 → (源集合, 源变量, scale, 描述, 换算)  conv='kgug':kg/m³→µg/m³;
@@ -56,20 +56,18 @@ def open_ds(url: str, tries: int = 3):
     raise RuntimeError(f'OPeNDAP 打不开 {url}: {last}')
 
 
-def grid_of(ds, var, ti: int, conv) -> np.ndarray:
-    """[ti, lat, lon] → 0.5° N→S / lon 0..360 网格;conv='kgug' 时 kg/m³ → µg/m³"""
+def grid_of(ds, var, ti: int, conv, lon_shift: int) -> np.ndarray:
+    """[ti, lat, lon] → N→S / lon 0..360 网格(经度按 lon_shift roll 到 0° 起始);
+    conv='kgug' 时 kg/m³ → µg/m³"""
     a = ds[var][ti, :, :]
     a = np.ma.filled(a, np.nan).astype(np.float64)
     a[a >= 1.0e15] = np.nan
     lats = np.asarray(ds['lat'][:], dtype=np.float64)
-    lons = np.asarray(ds['lon'][:], dtype=np.float64)
     if lats[0] < lats[-1]:
         a = a[::-1, :]  # 统一 N→S
-        lats = lats[::-1]
-    if lons[0] > 0 or lons[-1] <= 0:  # -180..180 → roll 到 0..360
-        shift = int(np.argmin(np.abs(lons - (-180.0))))
-        a = np.roll(a, -shift, axis=1)
-    a = a[::2, ::2]  # 0.25°×0.3125° → 0.5°
+    if lon_shift:
+        a = np.roll(a, -lon_shift, axis=1)
+    a = a[::2, ::2]  # 0.25°×0.3125° → 0.5°×0.625°
     if conv == 'kgug':
         return a * KGUG
     if conv == 'ppbv2ug':
@@ -105,6 +103,16 @@ def main():
     times = [f'{s.year:04d}-{s.month:02d}-{s.day:02d}T{s.hour:02d}:{s.minute:02d}' for s in stamps]
     print(f'  [chem] 时次:{times}')
 
+    # 经度坐标:GEOS FP 实测发布为 -180..180(0.3125°),roll 到 0° 起始后隔列采样 → 0..359.375 @ 0.625°
+    lons_src = np.asarray(dss['aer']['lon'][:], dtype=np.float64)
+    lon_shift = int(np.argmin(np.abs(lons_src))) if lons_src[0] < 0 else 0
+    lons = np.roll(lons_src, -lon_shift) if lon_shift else lons_src
+    lons = np.where(lons < 0, lons + 360.0, lons)[::2]
+    dlon = round(float(lons[1] - lons[0]), 6)
+    assert lons[0] == 0 and np.allclose(lons, np.arange(lons.size) * dlon), \
+        f'经度坐标异常:{lons[:3]} ... {lons[-3:]}'
+    print(f'  [chem] 网格:{lons.size}×{NJ} lon 0..{lons[-1]} dlon={dlon}')
+
     frames = {}  # var → [帧, ...]
     for var, (src, sname, _, desc, conv) in VARS.items():
         if src not in dss:
@@ -118,7 +126,7 @@ def main():
             print(f'  [chem] 跳过 {var}(时次缺)')
             continue
         try:
-            fs = [grid_of(ds, sname, i, conv) for i in idx]
+            fs = [grid_of(ds, sname, i, conv, lon_shift) for i in idx]
             if var == 'co2':  # 保守钳制到物理范围(防归档异常值)
                 for f in fs:
                     f[(f < 350) | (f > 600)] = np.nan
@@ -143,7 +151,7 @@ def main():
         'model': 'chem_raw', 'runKey': run_key, 'times': times,
         'generated': int(datetime.now(timezone.utc).timestamp()),
         'format': 'per-var',
-        'grid': {'ni': NI, 'nj': NJ, 'lon0': 0, 'dlon': 0.5, 'lat0': 90, 'dlat': 0.5},
+        'grid': {'ni': lons.size, 'nj': NJ, 'lon0': 0, 'dlon': dlon, 'lat0': 90, 'dlat': 0.5},
         'vars': {},
     }
     for var, fs in frames.items():
