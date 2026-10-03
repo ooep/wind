@@ -329,6 +329,26 @@ async function main() {
       }
     }
 
+    // ECMWF/AIFS 软守卫:503 风暴期个别变量可能整轮取不到——非核心变量全空则本轮
+    // 不发布该变量(前端按模式缺变量门控,该图层自动回落其他模式),核心变量(u/v/temp)
+    // 全空才整体拒绝(保线上旧包)。把"风暴期整轮白跑"变成"至少更新风温压"
+    if (model === 'ecmwf_raw' || model === 'aifs_raw') {
+      const CORE = new Set(['u', 'v', 'temp']);
+      for (const [vk, b64] of Object.entries(coarse.vars)) {
+        const f32 = Buffer.from(b64, 'base64');
+        const vals = new Float32Array(f32.buffer, f32.byteOffset, f32.length / 4);
+        let finite = 0;
+        for (let i = 0; i < vals.length; i++) if (!Number.isNaN(vals[i])) finite++;
+        if (finite >= vals.length * 0.005) continue;
+        if (CORE.has(vk)) {
+          console.error(`✗ ${model}.${vk} 核心变量全空,拒绝发布(线上保留旧包)`);
+          process.exit(1);
+        }
+        delete coarse.vars[vk];
+        console.error(`  [软守卫] ${model}.${vk} 全空(上游风暴),本轮剔除该变量,其余照常发布`);
+      }
+    }
+
     // meta:网格形状 + 变量清单(前端据此懒加载)
     const varsManifest = {};
     for (const [vk, b64] of Object.entries(coarse.vars)) {

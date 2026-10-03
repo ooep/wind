@@ -25,6 +25,10 @@ jobs:
         with:
           node-version: '20'
 
+      # eccodes(轮子内置二进制):ECMWF 新输出的 5.42 CCSDS 打包由 server/ecc.py 兜底解码
+      - name: 安装 eccodes
+        run: pip install --quiet eccodes
+
       # 跨轮恢复摄取进度:限流期的抓取逐轮累积
       - name: 恢复摄取缓存
         uses: actions/cache@v4

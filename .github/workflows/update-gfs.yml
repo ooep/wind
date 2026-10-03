@@ -17,7 +17,7 @@ concurrency:
 jobs:
   ingest-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 180 # 层级包+X 变量(辐射/边界层)后约 3200 条,按余量 180 分钟
+    timeout-minutes: 240 # 层级包+X 变量后约 3200 条;并发组排队后仍需 ~90 分钟,留足余量
     steps:
       - uses: actions/checkout@v4
 

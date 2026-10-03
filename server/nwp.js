@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { findMessages, decodeMessage } = require('./grib2');
+const { eccDecode } = require('./ecc');
 
 const NJ = 361, NI = 720; // GEFS 0.5° 网格;ECMWF 0.25° 使用自己的常量(见模型定义)
 const SENTINEL = -32768;
@@ -208,7 +209,7 @@ const GEFS_VARS = {
   msl: { grib: 'PRMSL', level: 'mean sea level', scale: 10, conv: (v) => v / 100 },
   precip: { grib: 'APCP', level: 'surface', scale: 100, conv: (v) => v, acc: true }, // 累积窗口不固定(3h/6h 交替),fetchVarStep 按 idx 时间窗动态换算 mm/h
   cloud: { grib: 'TCDC', level: 'entire atmosphere', scale: 100, conv: (v) => v, ave: true },
-  gust: { grib: 'GUST', level: 'surface', scale: 100, conv: (v) => v },
+  gust: { grib: 'GUST', level: 'surface', scale: 100, conv: (v) => v, absent: true }, // GEFS pgrb2a 确认无 GUST,阵风图层 pin gfs_raw
 };
 
 GEFS.varCfg = GEFS_VARS;
@@ -312,7 +313,12 @@ function normalizeGrid(dec, grid, cfg) {
   return out;
 }
 
-/* ECMWF Open Data 引擎工厂:IFS(物理模式)与 AIFS(AI 模式)共用同一发布管道 */
+/* ECMWF Open Data 引擎工厂:IFS(物理模式)与 AIFS(AI 模式)共用同一发布管道。
+ * 双源:S3(主,高峰期整小时 503 风暴)与 GCS 镜像(同构路径,实测稳定)逐消息自动回退 */
+const ECMWF_SOURCES = [
+  'https://ecmwf-forecasts.s3.amazonaws.com',
+  'https://storage.googleapis.com/ecmwf-open-data',
+];
 function ecmwfLike(id, label, product, concurrency) {
   return {
     id,
@@ -336,18 +342,34 @@ function ecmwfLike(id, label, product, concurrency) {
     async fetchVarStep(runKey, step, varKey) {
       const [dateStr, hh] = runKey.split('/');
       const base = `${dateStr}${hh}0000`;
-      const fileTag = `${String(step).padStart(2, '0')}h`;
-      const url = `${S3ECMWF}/${dateStr}/${hh}z/${this.product}/${base}-${fileTag}-oper-fc`;
-      const idxText = (await fetchBuf(`${url}.index`, 10, {}, 1500)).toString('utf8');
-      const msgs = idxText.trim().split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-      const cfg = this.varCfg[varKey];
-      const target = msgs.find((m) => m.name === cfg.name && Number(m.step) === Number(step));
-      if (!target) throw new Error(`index 中未找到 ${varKey}(${cfg.name})@${step}h`);
-      const data = await fetchBuf(`${url}.grib2`, 10, { Range: `bytes=${target._offset}-${target._offset + target._length - 1}` }, 1500);
-      const m = findMessages(data)[0];
-      if (!m) throw new Error('Range 内未找到 GRIB 消息');
-      const dec = decodeMessage(m);
-      return normalizeGrid(dec, this.grid, cfg);
+      const fileTag = `${step}h`; // 官方文件名 step 不补零(0h/3h/6h/102h),padStart 补零会 404 丢帧
+      const suffix = `${dateStr}/${hh}z/${this.product}/${base}-${fileTag}-oper-fc`;
+      let lastErr;
+      for (const src of ECMWF_SOURCES) {
+        try {
+          const idxText = (await fetchBuf(`${src}/${suffix}.index`, 10, {}, 1500)).toString('utf8');
+          const msgs = idxText.trim().split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          const cfg = this.varCfg[varKey];
+          // ECMWF index 字段为 param(部分历史版本为 name),step 为字符串,统一数值比较
+          const target = msgs.find((m) => (m.param || m.name) === cfg.name && Number(m.step) === Number(step));
+          if (!target) throw new Error(`index 中未找到 ${varKey}(${cfg.name})@${step}h`);
+          const data = await fetchBuf(`${src}/${suffix}.grib2`, 10, { Range: `bytes=${target._offset}-${target._offset + target._length - 1}` }, 1500);
+          const m = findMessages(data)[0];
+          if (!m) throw new Error('Range 内未找到 GRIB 消息');
+          let dec;
+          try {
+            dec = decodeMessage(m);
+          } catch (e) {
+            // ECMWF 新输出用 JS 解码器未覆盖的数据表示模板(5.42 CCSDS),交 eccodes 兜底
+            if (!/不支持的数据表示模板/.test(e.message)) throw e;
+            dec = await eccDecode(m);
+          }
+          return normalizeGrid(dec, this.grid, cfg);
+        } catch (e) {
+          lastErr = e; // 503 风暴等 → 换下一镜像
+        }
+      }
+      throw lastErr;
     },
     gridOf() { return this.grid; },
   };
@@ -364,7 +386,7 @@ const ECMWF_VARS = {
   msl: { name: 'msl', scale: 10, conv: (v) => v / 100 },
   precip: { name: 'tp', scale: 100, conv: (v) => v * 1000 }, // m 累积 → mm(3h)
   cloud: { name: 'tcc', scale: 100, conv: (v) => v * 100 },  // 0-1 → %
-  gust: { name: '__none__', scale: 100, conv: (v) => v },
+  gust: { name: '__none__', scale: 100, conv: (v) => v, absent: true }, // 开放数据无阵风场,阵风图层 pin gfs_raw
 };
 
 ECMWF.varCfg = ECMWF_VARS;
@@ -420,6 +442,7 @@ class ModelEngine {
         const done = this.def.store.doneVars(t.runKey, t.step);
         for (const varKey of this.def.varKeys) {
           if (done.has(varKey)) continue;
+          if (this.def.varCfg && this.def.varCfg[varKey] && this.def.varCfg[varKey].absent) continue; // 上游产品确认无此字段,跳过(省每轮无谓请求)
           tasks.push({ ...t, varKey });
         }
       }
@@ -733,15 +756,18 @@ ECMWF.discoverRuns = async function () {
     if (d.getTime() > now) continue;
     const hh2 = String(d.getUTCHours()).padStart(2, '0');
     const dateStr = utcStr(d);
-    // 列举该 run 的 0p25 oper 目录,确认已发布
-    try {
-      const listXml = await fetchBuf(`${S3ECMWF}/?list-type=2&prefix=${dateStr}/${hh2}z/ifs/0p25/oper/&max-keys=3`, 4, {}, 1500);
-      const xml = listXml.toString('utf8');
-      if (xml.includes('<Key>')) found.push({ key: `${dateStr}/${hh2}`, init: d.getTime() });
-    } catch { /* 不存在或限流 */ }
+    // 列举该 run 的 0p25 oper 目录,确认已发布;S3 风暴时换 GCS 镜像
+    let ok = false;
+    for (const src of ECMWF_SOURCES) {
+      try {
+        const listXml = await fetchBuf(`${src}/?list-type=2&prefix=${dateStr}/${hh2}z/ifs/0p25/oper/&max-keys=3`, 3, {}, 1500);
+        if (listXml.toString('utf8').includes('<Key>')) { ok = true; break; }
+      } catch { /* 该源不可用,试下一个 */ }
+    }
+    if (ok) found.push({ key: `${dateStr}/${hh2}`, init: d.getTime() });
     if (found.length && found[found.length - 1].init <= needPast) break;
   }
-  if (!found.length) throw new Error('未找到可用的 ECMWF Open Data run');
+  if (!found.length) throw new Error('未找到可用的 ECMWF Open Data run(双源均不可达)');
   return found;
 };
 ECMWF.steps = (R) => {
