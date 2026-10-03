@@ -302,10 +302,12 @@ function normalizeGrid(dec, grid, cfg) {
   const sx = Math.round(srcW / ni), sy = Math.round(srcH / nj);
   const out = new Int16Array(nj * ni);
   const flipped = dec.grid.la1 < dec.grid.la2;
+  /* conv 可为 null(如 ECMWF rh=2d 露点原样入库,由后处理转 RH)→ 直通 */
+  const conv = typeof cfg.conv === 'function' ? cfg.conv : (v) => v;
   for (let j = 0; j < nj; j++) {
     const srcRow = (flipped ? (srcH - 1 - j * sy) : j * sy) | 0;
     for (let i = 0; i < ni; i++) {
-      const v = cfg.conv(src[srcRow * srcW + ((i * sx) | 0)]);
+      const v = conv(src[srcRow * srcW + ((i * sx) | 0)]);
       if (Number.isNaN(v)) { out[j * ni + i] = SENTINEL; continue; }
       out[j * ni + i] = Math.max(-32767, Math.min(32767, Math.round(v * cfg.scale)));
     }
